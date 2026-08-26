@@ -44,7 +44,7 @@ The retrieval engines never write; they only read what `corpus.py` built.
 | 0 | Skeleton, config, health check | ✅ |
 | 1 | Parsing, chunking, corpus CRUD | ✅ |
 | 2 | Inverted index, VSM (lnc.ltc), inexact top-K | ✅ |
-| 3 | BM25, Rocchio pseudo-relevance feedback | ☐ |
+| 3 | BM25, Rocchio pseudo-relevance feedback | ✅ |
 | 4 | Embeddings, Chroma, RAG with citations | ☐ |
 | 5 | React admin + search UI | ☐ |
 | 6 | Bonus: URL scraping, visualization, reranking | ☐ |
@@ -73,7 +73,7 @@ cd frontend && npm install && npm run dev
 Checks:
 
 ```bash
-cd backend && python -m tests.test_ingest && python -m tests.test_lexical
+cd backend && python -m tests.test_ingest && python -m tests.test_lexical && python -m tests.test_bm25_prf
 ```
 
 ## API
@@ -106,9 +106,29 @@ Three retrieval modes, two of them inexact top-K (slide 8-Scoring s19):
 
 `scored` in the response is how many chunks were actually visited, so the
 saving from an inexact mode is visible per query rather than merely claimed.
+All three modes work with both lexical engines.
+
+**BM25** (slide 11-Probabilistic s31–32) adds probabilistic weighting with
+tunable `k1` (term frequency saturation), `b` (length normalization) and `k3`
+(query-side saturation). The two models disagree in an instructive way: cosine
+normalization punishes a long document harder than BM25's `b=0.75`, so the
+same query can rank a different chunk first under each — which is why the
+spec asks for both.
+
+**Pseudo-relevance feedback** (slide 10) runs Rocchio on the assumption that
+the top hits of an initial retrieval are relevant:
+
+    q_m = α·q_0 + β·centroid(top n) − γ·centroid(next m)
+
+with α=1.0, β=0.75, γ=0.15, negative weights clipped, and the expansion capped
+at the heaviest 20 terms because long queries are expensive (s20). Original
+query terms are never capped away. The response returns the added terms in
+`expansion`, so the effect is inspectable rather than invisible. PRF is
+available on VSM only — Rocchio is defined on the vector space model — and the
+route rejects the combination with BM25 rather than silently ignoring it.
 
 The index is **derived** from SQLite: delete `data/index/inverted.pkl` and it
-is rebuilt at startup with bit-identical rankings.
+is rebuilt at startup with identical rankings.
 
 The Vite dev server proxies `/api` to `http://localhost:8000`, so no API base
 URL needs configuring.

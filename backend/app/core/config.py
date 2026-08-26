@@ -53,6 +53,7 @@ class Settings(BaseSettings):
     prf_gamma: float = 0.15
     prf_n_relevant: int = 10  # top-n assumed relevant
     prf_n_nonrelevant: int = 20  # next-m assumed nonrelevant
+    prf_expansion_terms: int = 20  # s20: cap the expanded query length
 
     # --- embeddings (RAG slides s33) ---
     embed_model: str = "all-MiniLM-L6-v2"  # SPEC MiniLM / SLIDES nomic-embed-text

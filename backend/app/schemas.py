@@ -33,8 +33,9 @@ class DeleteResult(BaseModel):
 
 class SearchRequest(BaseModel):
     query: str
-    engine: Literal["vsm"] = "vsm"  # bm25 and rag join in phases 3 and 4
+    engine: Literal["vsm", "bm25"] = "vsm"  # rag joins in phase 4
     mode: Literal["exact", "champion", "elimination"] = "champion"
+    prf: bool = False  # Rocchio pseudo-relevance feedback, VSM only
     k: int | None = None
 
 
@@ -52,6 +53,8 @@ class SearchResponse(BaseModel):
     query: str
     engine: str
     mode: str
+    prf: bool = False
     took_ms: float
     scored: int  # size of the candidate set — shows what inexact top-K skipped
+    expansion: list[str] = []  # terms Rocchio added, so the effect is visible
     hits: list[SearchHit]

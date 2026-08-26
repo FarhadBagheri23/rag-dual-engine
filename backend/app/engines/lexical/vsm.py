@@ -51,14 +51,9 @@ def _eliminate(weights: dict[str, float]) -> dict[str, float]:
     return kept or weights
 
 
-def _candidates(weights: dict[str, float], mode: str) -> set[str]:
-    """Set A of contenders — slide 8-Scoring s18."""
-    if mode == "champion":
-        return {cid for t in weights for cid in index.champions.get(t, ())}
-    return {cid for t in weights for cid in index.postings.get(t, ())}
-
-
-def search(query: str, k: int | None = None, mode: str = "champion") -> dict:
+def search(
+    query: str, k: int | None = None, mode: str = "champion", prf: bool = False
+) -> dict:
     """Ranked chunks for `query`.
 
     Every engine returns this shape: {"hits": [...], "scored": int}. `scored`
@@ -74,7 +69,12 @@ def search(query: str, k: int | None = None, mode: str = "champion") -> dict:
     if not weights:
         return {"hits": [], "scored": 0}
 
-    return rank(weights, k or settings.top_k, mode)
+    k = k or settings.top_k
+    if prf:
+        from app.engines.lexical import prf as prf_module  # circular at import time
+
+        return prf_module.search(weights, k, mode)
+    return rank(weights, k, mode)
 
 
 def rank(weights: dict[str, float], k: int, mode: str = "exact") -> dict:
@@ -83,7 +83,7 @@ def rank(weights: dict[str, float], k: int, mode: str = "exact") -> dict:
     Split out from `search` because pseudo-relevance feedback (phase 3) ranks a
     modified vector that never came from a query string.
     """
-    candidates = _candidates(weights, mode)
+    candidates = index.candidates(weights, mode)
     scores: dict[str, float] = {}
     for cid in candidates:
         forward = index.forward.get(cid)

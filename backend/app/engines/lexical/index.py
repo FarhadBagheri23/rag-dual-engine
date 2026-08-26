@@ -103,6 +103,11 @@ class InvertedIndex:
             }
         return self._champions
 
+    def candidates(self, terms, mode: str) -> set[str]:
+        """Set A of contenders — slide 8-Scoring s18. Shared by VSM and BM25."""
+        source = self.champions if mode == "champion" else self.postings
+        return {cid for t in terms for cid in source.get(t, ())}
+
     # ------------------------------------------------------------ persistence
     def save(self):
         with open(INDEX_PATH, "wb") as fh:
