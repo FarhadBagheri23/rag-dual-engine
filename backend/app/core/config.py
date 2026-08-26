@@ -26,9 +26,14 @@ class Settings(BaseSettings):
     upload_dir: Path = BASE_DIR / "data" / "uploads"
     index_dir: Path = BASE_DIR / "data" / "index"
 
+    # --- ingestion ---
+    max_upload_bytes: int = 50_000_000
+
     # --- chunking (RAG slides s32: recursive splitter, respects paragraph bounds) ---
-    chunk_size: int = 500  # SPEC 500 / SLIDES 1000
-    chunk_overlap: int = 50  # SPEC  50 / SLIDES  150
+    # Measured in WORDS, because the spec says "500 words with a 50-word overlap".
+    # The slides' lab used 1000/150 *characters* (~160/24 words); eval/ sweeps both.
+    chunk_size: int = 500
+    chunk_overlap: int = 50
 
     # --- retrieval ---
     top_k: int = 10

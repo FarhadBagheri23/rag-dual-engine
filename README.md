@@ -42,7 +42,7 @@ The retrieval engines never write; they only read what `corpus.py` built.
 | Phase | Scope | State |
 |---|---|---|
 | 0 | Skeleton, config, health check | ✅ |
-| 1 | Parsing, chunking, corpus CRUD | ☐ |
+| 1 | Parsing, chunking, corpus CRUD | ✅ |
 | 2 | Inverted index, VSM (lnc.ltc), champion lists | ☐ |
 | 3 | BM25, Rocchio pseudo-relevance feedback | ☐ |
 | 4 | Embeddings, Chroma, RAG with citations | ☐ |
@@ -69,6 +69,21 @@ Frontend:
 ```bash
 cd frontend && npm install && npm run dev
 ```
+
+Checks:
+
+```bash
+cd backend && python -m tests.test_ingest
+```
+
+## API
+
+| Method | Path | Purpose |
+|---|---|---|
+| `GET` | `/api/health` | status + which LLM is configured |
+| `GET` | `/api/documents` | corpus listing |
+| `POST` | `/api/documents` | upload a `.pdf` or `.docx` |
+| `DELETE` | `/api/documents/{id}` | remove from **every** index, reports what each removed |
 
 The Vite dev server proxies `/api` to `http://localhost:8000`, so no API base
 URL needs configuring.
