@@ -1,4 +1,5 @@
 from datetime import datetime
+from typing import Literal
 
 from pydantic import BaseModel
 
@@ -28,3 +29,29 @@ class DeleteResult(BaseModel):
     chunks_removed: int
     postings_removed: int = 0  # phase 2
     vectors_removed: int = 0  # phase 4
+
+
+class SearchRequest(BaseModel):
+    query: str
+    engine: Literal["vsm"] = "vsm"  # bm25 and rag join in phases 3 and 4
+    mode: Literal["exact", "champion", "elimination"] = "champion"
+    k: int | None = None
+
+
+class SearchHit(BaseModel):
+    chunk_id: str
+    doc_id: str
+    title: str
+    ordinal: int
+    score: float
+    snippet: str
+    matched: list[str]
+
+
+class SearchResponse(BaseModel):
+    query: str
+    engine: str
+    mode: str
+    took_ms: float
+    scored: int  # size of the candidate set — shows what inexact top-K skipped
+    hits: list[SearchHit]

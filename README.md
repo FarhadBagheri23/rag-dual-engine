@@ -43,7 +43,7 @@ The retrieval engines never write; they only read what `corpus.py` built.
 |---|---|---|
 | 0 | Skeleton, config, health check | ✅ |
 | 1 | Parsing, chunking, corpus CRUD | ✅ |
-| 2 | Inverted index, VSM (lnc.ltc), champion lists | ☐ |
+| 2 | Inverted index, VSM (lnc.ltc), inexact top-K | ✅ |
 | 3 | BM25, Rocchio pseudo-relevance feedback | ☐ |
 | 4 | Embeddings, Chroma, RAG with citations | ☐ |
 | 5 | React admin + search UI | ☐ |
@@ -73,7 +73,7 @@ cd frontend && npm install && npm run dev
 Checks:
 
 ```bash
-cd backend && python -m tests.test_ingest
+cd backend && python -m tests.test_ingest && python -m tests.test_lexical
 ```
 
 ## API
@@ -84,6 +84,31 @@ cd backend && python -m tests.test_ingest
 | `GET` | `/api/documents` | corpus listing |
 | `POST` | `/api/documents` | upload a `.pdf` or `.docx` |
 | `DELETE` | `/api/documents/{id}` | remove from **every** index, reports what each removed |
+| `POST` | `/api/search` | `{query, engine, mode, k}` → ranked hits with snippets |
+
+## Retrieval
+
+The inverted index is built from scratch: `postings[term] = {chunk_id: tf}`,
+plus a forward index for O(terms) deletion and a precomputed L2 norm per chunk.
+
+Scoring is **lnc.ltc** (slide 7-Scoring s42) — documents get log tf, no idf,
+cosine normalization; queries get log tf, idf, cosine normalization. Top-K
+selection uses a binary min-heap, O(N log K) rather than sorting all N
+(slide 8-Scoring s13–14).
+
+Three retrieval modes, two of them inexact top-K (slide 8-Scoring s19):
+
+| `mode` | Contender set A | Safe? |
+|---|---|---|
+| `exact` | every chunk containing a query term | yes |
+| `champion` | champion lists — the `r` highest-tf chunks per term (s26) | no |
+| `elimination` | all postings, but only for high-idf query terms (s24) | no |
+
+`scored` in the response is how many chunks were actually visited, so the
+saving from an inexact mode is visible per query rather than merely claimed.
+
+The index is **derived** from SQLite: delete `data/index/inverted.pkl` and it
+is rebuilt at startup with bit-identical rankings.
 
 The Vite dev server proxies `/api` to `http://localhost:8000`, so no API base
 URL needs configuring.

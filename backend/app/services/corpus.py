@@ -12,6 +12,7 @@ from pathlib import Path
 from app.core.config import settings
 from app.core.exceptions import DocumentNotFound
 from app.database import documents as db
+from app.engines.lexical.index import index as lexical_index
 from app.services import ingest
 
 
@@ -34,7 +35,8 @@ def add(upload_path: Path, filename: str) -> dict:
         "n_words": len(text.split()),
     }
     db.insert(doc, chunks)
-    # phase 2: lexical_index.add(chunks)
+    lexical_index.add(chunks, doc_id)
+    lexical_index.save()
     # phase 4: vector_store.add(chunks)
     return {**doc, "n_chunks": len(chunks), "added_at": db.get(doc_id)["added_at"]}
 
@@ -46,14 +48,19 @@ def remove(doc_id: str) -> dict:
         raise DocumentNotFound(doc_id)
 
     ids = db.chunk_ids(doc_id)  # read before deleting — the other stores key on these
-    # phase 2: postings = lexical_index.remove(ids)
-    # phase 4: vectors  = vector_store.remove(ids)
+    postings_removed = lexical_index.remove(ids)
+    lexical_index.save()
+    # phase 4: vectors = vector_store.remove(ids)
     chunks_removed = db.delete(doc_id)
 
     stored = settings.upload_dir / f"{doc_id}.{doc['file_type']}"
     stored.unlink(missing_ok=True)
 
-    return {"id": doc_id, "chunks_removed": chunks_removed}
+    return {
+        "id": doc_id,
+        "chunks_removed": chunks_removed,
+        "postings_removed": postings_removed,
+    }
 
 
 def listing() -> list[dict]:

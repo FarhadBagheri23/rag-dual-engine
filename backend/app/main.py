@@ -3,14 +3,19 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.api import documents
+from app.api import documents, search
 from app.core.config import settings
 from app.database.session import init_db
+from app.engines.lexical.index import INDEX_PATH, index
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     init_db()
+    if not INDEX_PATH.exists():
+        # The index is derived from SQLite, so a missing or deleted index file
+        # is recoverable rather than fatal.
+        index.rebuild_from_db()
     yield
 
 
@@ -28,6 +33,7 @@ app.add_middleware(
 )
 
 app.include_router(documents.router)
+app.include_router(search.router)
 
 
 @app.get("/api/health")

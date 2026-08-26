@@ -38,6 +38,9 @@ class Settings(BaseSettings):
     # --- retrieval ---
     top_k: int = 10
     champion_r: int = 50  # 8-Scoring s26: r docs of highest tf per term
+    # 8-Scoring s24: keep query terms whose idf is >= this fraction of the
+    # query's highest idf. 0 keeps everything, 1 keeps only the rarest term.
+    elimination_ratio: float = 0.3
 
     # --- BM25 (11-Probabilistic s31-32; k3 saturates long queries) ---
     bm25_k1: float = 1.5  # SPEC 1.5 / HW2 1.2
