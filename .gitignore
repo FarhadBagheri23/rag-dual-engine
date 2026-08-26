@@ -1,0 +1,19 @@
+.env
+venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+.ipynb_checkpoints/
+
+# runtime data — sample_corpus/ is committed, everything else is generated
+backend/data/uploads/*
+backend/data/index/*
+!backend/data/uploads/.gitkeep
+!backend/data/index/.gitkeep
+
+node_modules/
+frontend/dist/
+
+.vscode/
+.idea/
+.DS_Store
