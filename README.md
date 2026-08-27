@@ -46,7 +46,7 @@ The retrieval engines never write; they only read what `corpus.py` built.
 | 2 | Inverted index, VSM (lnc.ltc), inexact top-K | ✅ |
 | 3 | BM25, Rocchio pseudo-relevance feedback | ✅ |
 | 4 | Embeddings, Chroma, RAG with citations | ✅ |
-| 5 | React admin + search UI | ☐ |
+| 5 | React admin + search UI | ✅ |
 | 6 | Bonus: URL scraping, visualization, reranking | ☐ |
 | 7 | Evaluation, Docker, docs | ☐ |
 

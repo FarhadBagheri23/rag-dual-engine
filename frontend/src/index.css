@@ -1,3 +1,43 @@
+@import url("https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&family=JetBrains+Mono:wght@400;500;600&display=swap");
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
+
+@layer base {
+  body {
+    @apply bg-bg text-fg font-sans antialiased;
+  }
+
+  /* Keyboard focus must stay visible — the design system's own checklist. */
+  :focus-visible {
+    @apply outline-none ring-2 ring-accent ring-offset-2 ring-offset-bg;
+  }
+}
+
+@layer components {
+  .card {
+    @apply rounded-lg border border-line bg-card;
+  }
+
+  .seg {
+    @apply cursor-pointer rounded-md px-3 py-1.5 text-sm transition-colors duration-150;
+  }
+
+  .seg-on {
+    @apply bg-accent font-medium text-accent-ink;
+  }
+
+  .seg-off {
+    @apply text-dim hover:bg-muted hover:text-fg;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
+}

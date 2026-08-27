@@ -45,7 +45,18 @@ def search(req: SearchRequest):
                 "ordinal": chunk["ordinal"],
                 "score": round(r["score"], 6),
                 "snippet": snippet(chunk["text"], query_terms),
-                "matched": sorted(r["matched"] & set(index.forward.get(r["chunk_id"], {}))),
+                # Most informative first, and drop terms with zero idf: a term
+                # occurring in every chunk contributes nothing to the score, so
+                # highlighting it is noise ("a" lit up in every snippet).
+                "matched": sorted(
+                    (
+                        t
+                        for t in r["matched"] & set(index.forward.get(r["chunk_id"], {}))
+                        if index.idf(t) > 0
+                    ),
+                    key=index.idf,
+                    reverse=True,
+                ),
                 "doc_number": r.get("doc_number"),
             }
         )
