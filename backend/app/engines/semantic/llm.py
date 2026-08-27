@@ -10,9 +10,10 @@ UI's model picker reflects the account instead of a hardcoded list.
 
 from functools import lru_cache
 
-from openai import OpenAI
+from openai import APIError, APIStatusError, OpenAI
 
 from app.core.config import settings
+from app.core.exceptions import ProviderError
 
 
 @lru_cache(maxsize=1)
@@ -35,9 +36,22 @@ def available_models() -> list[str]:
 
 
 def complete(prompt: str, model: str | None = None) -> str:
-    response = client().chat.completions.create(
-        model=model or settings.llm_model,
-        messages=[{"role": "user", "content": prompt}],
-        temperature=0,  # grounded answers should not be creative
-    )
+    try:
+        response = client().chat.completions.create(
+            model=model or settings.llm_model,
+            messages=[{"role": "user", "content": prompt}],
+            temperature=0,  # grounded answers should not be creative
+        )
+    except APIStatusError as exc:
+        # The provider's own message is the useful part — a restricted key or
+        # an unknown model says exactly what to do. Pass it through.
+        detail = exc.message
+        try:
+            detail = exc.response.json()["error"]["message"]
+        except Exception:
+            pass
+        raise ProviderError(exc.status_code, detail) from None
+    except APIError as exc:  # network, timeout, malformed response
+        raise ProviderError(None, str(exc)) from None
+
     return response.choices[0].message.content or ""

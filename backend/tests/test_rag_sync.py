@@ -51,6 +51,23 @@ def test_prompt_guards_against_injection():
     print("  context fenced, injection guard and grounding instruction present")
 
 
+def test_provider_errors_map_to_actionable_status():
+    """A restricted key or unknown model must not surface as a bare 500 — the
+    provider's message names the fix, so it has to reach the caller."""
+    from app.core.exceptions import ProviderError
+
+    fixable = ProviderError(403, "Access denied for model 'x'. Verify key.")
+    assert fixable.status_code == 400, fixable.status_code
+    assert "Verify key" in fixable.detail
+
+    upstream = ProviderError(503, "upstream unavailable")
+    assert upstream.status_code == 502, upstream.status_code
+
+    network = ProviderError(None, "connection reset")
+    assert network.status_code == 502, network.status_code
+    print("  403 -> 400 (caller can fix), 503/None -> 502 (upstream fault)")
+
+
 def test_both_indexes_stay_synchronized():
     """The rubric line: add and remove must leave SQLite, the inverted index
     and the vector store agreeing at every step."""
@@ -119,6 +136,7 @@ if __name__ == "__main__":
     for fn in [
         test_citation_parsing,
         test_prompt_guards_against_injection,
+        test_provider_errors_map_to_actionable_status,
         test_both_indexes_stay_synchronized,
         test_semantic_beats_keyword_on_vocabulary_mismatch,
     ]:

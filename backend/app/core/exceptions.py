@@ -26,6 +26,22 @@ class DocumentNotFound(HTTPException):
         super().__init__(status.HTTP_404_NOT_FOUND, f"No document with id '{doc_id}'")
 
 
+class ProviderError(HTTPException):
+    """An LLM provider rejected or failed the request.
+
+    Providers return genuinely useful messages — a restricted key, an unknown
+    model, an exhausted quota — and swallowing them into a bare 500 leaves the
+    user with nothing to act on. 4xx passes through as 400 because the caller
+    can fix it; anything else is 502, because the fault is upstream.
+    """
+
+    def __init__(self, status: int | None, message: str):
+        super().__init__(
+            400 if status and 400 <= status < 500 else 502,
+            f"LLM provider error: {message}",
+        )
+
+
 class EmptyDocument(HTTPException):
     def __init__(self, filename: str):
         super().__init__(

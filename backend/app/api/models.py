@@ -20,7 +20,12 @@ def list_models():
         "configured": bool(settings.llm_api_key),
         "base_url": settings.llm_base_url,
         "default": settings.llm_model,
+        "count": len(available),
         "models": available,
+        # /v1/models reports the provider's catalogue, not this key's grants —
+        # a restricted key still lists models it will 403 on. Rather than probe
+        # hundreds of ids, let the attempt fail with the provider's own message,
+        # which names the fix.
         "note": None
         if available
         else "Could not list models — check LLM_API_KEY and LLM_BASE_URL, or the "
