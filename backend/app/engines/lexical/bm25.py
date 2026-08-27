@@ -37,12 +37,13 @@ def idf(term: str) -> float:
 
 
 def search(
-    query: str, k: int | None = None, mode: str = "champion", prf: bool = False
+    query: str, k: int | None = None, mode: str = "champion", prf: bool = False, **_
 ) -> dict:
     """Ranked chunks for `query`. Same contract as vsm.search.
 
     `prf` is accepted so every engine shares one signature; Rocchio is defined
     on the vector space model, and the route rejects prf with this engine.
+    `**_` absorbs options that belong to another engine, such as `model`.
     """
     if mode not in MODES:
         raise ValueError(f"mode must be one of {MODES}, got {mode!r}")

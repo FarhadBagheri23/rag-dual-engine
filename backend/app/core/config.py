@@ -19,8 +19,10 @@ class Settings(BaseSettings):
 
     # --- LLM: any OpenAI-compatible endpoint (Groq, Gemini, Ollama, OpenAI) ---
     llm_api_key: str = ""
-    llm_base_url: str = "https://api.groq.com/openai/v1"
-    llm_model: str = "llama-3.3-70b-versatile"
+    llm_base_url: str = "https://api.avalai.ir/v1"
+    llm_model: str = "gpt-4o-mini"
+    llm_timeout: float = 60.0
+    rag_top_k: int = 4  # chunks placed in the prompt; keep small (s43)
 
     # --- storage ---
     upload_dir: Path = BASE_DIR / "data" / "uploads"

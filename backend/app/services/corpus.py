@@ -13,6 +13,7 @@ from app.core.config import settings
 from app.core.exceptions import DocumentNotFound
 from app.database import documents as db
 from app.engines.lexical.index import index as lexical_index
+from app.engines.semantic import vectordb
 from app.services import ingest
 
 
@@ -37,7 +38,7 @@ def add(upload_path: Path, filename: str) -> dict:
     db.insert(doc, chunks)
     lexical_index.add(chunks, doc_id)
     lexical_index.save()
-    # phase 4: vector_store.add(chunks)
+    vectordb.add(chunks, doc_id)
     return {**doc, "n_chunks": len(chunks), "added_at": db.get(doc_id)["added_at"]}
 
 
@@ -50,7 +51,7 @@ def remove(doc_id: str) -> dict:
     ids = db.chunk_ids(doc_id)  # read before deleting — the other stores key on these
     postings_removed = lexical_index.remove(ids)
     lexical_index.save()
-    # phase 4: vectors = vector_store.remove(ids)
+    vectors_removed = vectordb.remove(ids)
     chunks_removed = db.delete(doc_id)
 
     stored = settings.upload_dir / f"{doc_id}.{doc['file_type']}"
@@ -60,6 +61,7 @@ def remove(doc_id: str) -> dict:
         "id": doc_id,
         "chunks_removed": chunks_removed,
         "postings_removed": postings_removed,
+        "vectors_removed": vectors_removed,
     }
 
 

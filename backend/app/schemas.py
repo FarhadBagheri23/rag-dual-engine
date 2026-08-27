@@ -33,9 +33,10 @@ class DeleteResult(BaseModel):
 
 class SearchRequest(BaseModel):
     query: str
-    engine: Literal["vsm", "bm25"] = "vsm"  # rag joins in phase 4
+    engine: Literal["vsm", "bm25", "rag"] = "vsm"
     mode: Literal["exact", "champion", "elimination"] = "champion"
     prf: bool = False  # Rocchio pseudo-relevance feedback, VSM only
+    model: str | None = None  # overrides LLM_MODEL for one request, RAG only
     k: int | None = None
 
 
@@ -47,6 +48,13 @@ class SearchHit(BaseModel):
     score: float
     snippet: str
     matched: list[str]
+    doc_number: int | None = None  # the N in [Doc N], RAG only
+
+
+class Citation(BaseModel):
+    doc_number: int
+    chunk_id: str
+    title: str
 
 
 class SearchResponse(BaseModel):
@@ -58,3 +66,8 @@ class SearchResponse(BaseModel):
     scored: int  # size of the candidate set — shows what inexact top-K skipped
     expansion: list[str] = []  # terms Rocchio added, so the effect is visible
     hits: list[SearchHit]
+    # RAG only
+    answer: str | None = None
+    citations: list[Citation] = []
+    model: str | None = None
+    note: str | None = None

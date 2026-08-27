@@ -10,11 +10,12 @@ route rejects the combination rather than letting it silently no-op.
 """
 
 from app.engines.lexical import bm25, vsm
+from app.engines.semantic import rag
 
 ENGINES = {
     "vsm": vsm.search,
     "bm25": bm25.search,
-    # "rag": rag.search,   phase 4
+    "rag": rag.search,
 }
 
 SUPPORTS_PRF = {"vsm"}

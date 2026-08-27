@@ -24,7 +24,7 @@ def search(req: SearchRequest):
         )
 
     started = time.perf_counter()
-    result = engine(req.query, k=req.k, mode=req.mode, prf=req.prf)
+    result = engine(req.query, k=req.k, mode=req.mode, prf=req.prf, model=req.model)
     took_ms = (time.perf_counter() - started) * 1000
 
     # Chunk text lives in SQLite, the source of truth — the index stores only
@@ -46,6 +46,7 @@ def search(req: SearchRequest):
                 "score": round(r["score"], 6),
                 "snippet": snippet(chunk["text"], query_terms),
                 "matched": sorted(r["matched"] & set(index.forward.get(r["chunk_id"], {}))),
+                "doc_number": r.get("doc_number"),
             }
         )
 
@@ -58,4 +59,8 @@ def search(req: SearchRequest):
         "scored": result["scored"],
         "expansion": result.get("expansion", []),
         "hits": hits,
+        "answer": result.get("answer"),
+        "citations": result.get("citations", []),
+        "model": result.get("model"),
+        "note": result.get("note"),
     }

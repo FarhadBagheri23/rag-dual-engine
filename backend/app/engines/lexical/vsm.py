@@ -52,7 +52,7 @@ def _eliminate(weights: dict[str, float]) -> dict[str, float]:
 
 
 def search(
-    query: str, k: int | None = None, mode: str = "champion", prf: bool = False
+    query: str, k: int | None = None, mode: str = "champion", prf: bool = False, **_
 ) -> dict:
     """Ranked chunks for `query`.
 
