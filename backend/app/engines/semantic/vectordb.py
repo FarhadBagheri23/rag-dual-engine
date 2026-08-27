@@ -36,9 +36,28 @@ def _client():
 def collection():
     # cosine, to match the similarity the course teaches — Chroma's default is
     # squared L2, which ranks differently for non-unit vectors.
+    #
+    # The embedding model is recorded here because vectors are only comparable
+    # to others from the same model. Swapping models leaves the chunk *count*
+    # identical, so a count-based reconcile would not notice, and the store
+    # would keep answering with silently meaningless vectors.
     return _client().get_or_create_collection(
-        COLLECTION, metadata={"hnsw:space": "cosine"}
+        COLLECTION,
+        metadata={"hnsw:space": "cosine", "embed_model": settings.embed_model},
     )
+
+
+def stale() -> bool:
+    """True when the stored vectors did not come from the current model.
+
+    Missing metadata counts as stale: get_or_create_collection only applies
+    metadata at creation time, so an existing collection keeps whatever it was
+    built with. Treating None as "unknown, therefore rebuild" is the safe
+    reading — the alternative is comparing query vectors from one model against
+    document vectors from another, which returns confident nonsense rather than
+    an error.
+    """
+    return (collection().metadata or {}).get("embed_model") != settings.embed_model
 
 
 def add(chunks: list[dict], doc_id: str) -> int:

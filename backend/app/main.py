@@ -19,7 +19,7 @@ async def lifespan(app: FastAPI):
     n_chunks = len(db.all_chunks())
     if not INDEX_PATH.exists() or index.n_chunks != n_chunks:
         index.rebuild_from_db()
-    if vectordb.count() != n_chunks:
+    if vectordb.count() != n_chunks or vectordb.stale():
         vectordb.rebuild_from_db()
     yield
 

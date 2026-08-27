@@ -58,7 +58,12 @@ class Settings(BaseSettings):
     prf_expansion_terms: int = 20  # s20: cap the expanded query length
 
     # --- embeddings (RAG slides s33) ---
-    embed_model: str = "all-MiniLM-L6-v2"  # SPEC MiniLM / SLIDES nomic-embed-text
+    # SPEC recommends all-MiniLM-L6-v2, but that model is English-only: a
+    # Persian query scored 0.07 against the passage that answers it, where the
+    # English phrasing scored 0.46 — noise, not retrieval. The multilingual
+    # sibling covers 50+ languages and aligns them in one space, so a Persian
+    # question can retrieve an English passage. Costs ~470 MB and 384 dims.
+    embed_model: str = "paraphrase-multilingual-MiniLM-L12-v2"
 
 
 settings = Settings()

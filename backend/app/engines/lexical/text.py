@@ -2,11 +2,19 @@
 
 import re
 
-TOKEN_RE = re.compile(r"[a-z0-9]+")
+# [^\W_] is "word character except underscore", and Python's re is Unicode-aware
+# by default — so this keeps Persian, Arabic, Cyrillic and CJK alongside ASCII.
+# The older [a-z0-9]+ silently produced zero tokens for any non-Latin script,
+# which made the lexical engines blind to those queries rather than merely bad
+# at them.
+TOKEN_RE = re.compile(r"[^\W_]+")
 
 
 def tokenize(text: str) -> list[str]:
     """Lowercase, drop punctuation, split into alphanumeric tokens.
+
+    Script-agnostic: .lower() is a no-op for scripts without case, so Persian
+    and Arabic pass through unchanged.
 
     No stopword list is applied at index time. Slide 10 notes the trend is away
     from removing stopwords, and this corpus is mutable — a list derived from
