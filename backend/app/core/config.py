@@ -23,6 +23,11 @@ class Settings(BaseSettings):
     llm_model: str = "gpt-4o-mini"
     llm_timeout: float = 60.0
     rag_top_k: int = 4  # chunks placed in the prompt; keep small (s43)
+    # RAG slides s11: dense retrieval always returns *something*, so an
+    # out-of-corpus question still gets k neighbours — "set a max similarity
+    # threshold". Measured on this corpus: in-scope questions score 0.31-0.71,
+    # out-of-scope -0.07-0.15. 0.22 sits in the gap.
+    rag_min_score: float = 0.22
 
     # --- storage ---
     upload_dir: Path = BASE_DIR / "data" / "uploads"

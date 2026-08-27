@@ -65,6 +65,7 @@ export default function SearchView({ corpusSize, models }) {
             <input
               id="q"
               ref={inputRef}
+              dir="auto"
               value={query}
               onChange={(e) => setQuery(e.target.value)}
               placeholder="Ask the corpus…"

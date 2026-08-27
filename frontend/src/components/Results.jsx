@@ -21,7 +21,9 @@ export function ResultCard({ hit, rank }) {
     <li className="card p-4">
       <div className="flex items-baseline gap-3">
         <span className="font-mono text-xs text-dim">{rank}</span>
-        <h3 className="flex-1 font-medium leading-tight">{hit.title}</h3>
+        <h3 dir="auto" className="flex-1 font-medium leading-tight">
+          {hit.title}
+        </h3>
         <span
           className="font-mono text-sm text-accent"
           title="relevance score"
@@ -30,7 +32,7 @@ export function ResultCard({ hit, rank }) {
         </span>
       </div>
 
-      <p className="mt-2 pl-7 text-sm leading-relaxed text-dim">
+      <p dir="auto" className="mt-2 pl-7 text-sm leading-relaxed text-dim">
         {highlight(hit.snippet, hit.matched)}
       </p>
 
@@ -68,12 +70,33 @@ export function RagAnswer({ result }) {
       </div>
 
       {result.answer ? (
-        <p className="whitespace-pre-wrap leading-relaxed">{result.answer}</p>
-      ) : (
-        <p className="flex items-start gap-2 text-sm text-dim">
-          <Alert className="mt-0.5 h-4 w-4 shrink-0" />
-          {result.note || "No answer generated."}
+        // dir="auto" lets the browser's bidi algorithm choose direction from
+        // the first strong character — Persian lays out RTL, English LTR, and
+        // mixed text (a Persian sentence containing "BM25") stays correct.
+        // No language detection, no per-locale branch.
+        <p dir="auto" className="whitespace-pre-wrap leading-relaxed">
+          {result.answer}
         </p>
+      ) : (
+        <div>
+          <p className="flex items-start gap-2 text-sm text-dim">
+            <Alert className="mt-0.5 h-4 w-4 shrink-0" />
+            {result.note || "No answer generated."}
+          </p>
+          {result.coverage.length > 0 && (
+            <ul className="mt-3 flex flex-wrap gap-2">
+              {result.coverage.map((t) => (
+                <li
+                  key={t}
+                  dir="auto"
+                  className="rounded-md border border-line bg-muted px-2 py-1 text-xs"
+                >
+                  {t}
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
       )}
 
       {result.citations.length > 0 && (

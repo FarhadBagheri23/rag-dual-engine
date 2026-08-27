@@ -74,4 +74,5 @@ def search(req: SearchRequest):
         "citations": result.get("citations", []),
         "model": result.get("model"),
         "note": result.get("note"),
+        "coverage": result.get("coverage", []),
     }

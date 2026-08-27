@@ -71,3 +71,4 @@ class SearchResponse(BaseModel):
     citations: list[Citation] = []
     model: str | None = None
     note: str | None = None
+    coverage: list[str] = []  # corpus topics, shown when a query is rejected
