@@ -1,0 +1,922 @@
+<!doctype html>
+<html lang="fa" dir="rtl">
+<head>
+<meta charset="utf-8">
+<title>مستند پیاده‌سازی — سامانه‌ی جست‌وجوی دومَوتوره و RAG</title>
+<style>
+  @page { size: A4; margin: 20mm 18mm 18mm 18mm; }
+
+  :root {
+    --ink:   #14181d;
+    --dim:   #55606d;
+    --rule:  #d4dae1;
+    --accent:#0f5c6e;
+    --box:   #f4f7f9;
+    --code:  #eef2f5;
+  }
+
+  * { box-sizing: border-box; }
+
+  body {
+    font-family: "Noto Naskh Arabic", "Noto Sans Arabic", serif;
+    font-size: 11.2pt;
+    line-height: 2.05;
+    color: var(--ink);
+    text-align: justify;
+    margin: 0;
+  }
+
+  code, .ltr, .formula, pre {
+    font-family: "DejaVu Sans Mono", monospace;
+    direction: ltr;
+    unicode-bidi: isolate;
+  }
+
+  code {
+    background: var(--code);
+    padding: 0.5mm 1.2mm;
+    border-radius: 2px;
+    font-size: 0.85em;
+  }
+
+  /* ---------- عنوان‌ها ---------- */
+  h1 { font-size: 22pt; color: var(--accent); margin: 0 0 2mm; line-height: 1.5; }
+  h2 {
+    font-size: 14.5pt; color: var(--accent);
+    margin: 9mm 0 3mm; padding-bottom: 1.5mm;
+    border-bottom: 1.6px solid var(--accent);
+    page-break-after: avoid;
+  }
+  h3 {
+    font-size: 12.3pt; color: #22333d;
+    margin: 6mm 0 2mm;
+    page-break-after: avoid;
+  }
+  h2 + p, h3 + p { margin-top: 0; }
+  p { margin: 0 0 3mm; }
+
+  ul, ol { margin: 0 0 3mm; padding-right: 6mm; }
+  li { margin-bottom: 1.5mm; }
+
+  /* ---------- صفحه‌ی عنوان ---------- */
+  .cover {
+    text-align: center;
+    padding-top: 45mm;
+    page-break-after: always;
+  }
+  .cover .sub { font-size: 14pt; color: var(--dim); margin-top: 3mm; }
+  .cover .meta { margin-top: 30mm; font-size: 11pt; color: var(--dim); line-height: 2.4; }
+  .cover hr { width: 45mm; border: 0; border-top: 2px solid var(--accent); margin: 8mm auto; }
+
+  /* ---------- فرمول ---------- */
+  .formula {
+    background: var(--box);
+    border-right: 3px solid var(--accent);
+    padding: 4mm 5mm;
+    margin: 3.5mm 0;
+    text-align: center;
+    font-size: 11pt;
+    line-height: 1.9;
+    page-break-inside: avoid;
+    border-radius: 0 3px 3px 0;
+  }
+  .formula .note {
+    font-family: "Noto Naskh Arabic", serif;
+    direction: rtl;
+    display: block;
+    font-size: 9.3pt;
+    color: var(--dim);
+    margin-top: 2.5mm;
+    text-align: center;
+  }
+
+  /* کسر: صورت روی مخرج.
+     nowrap فقط اینجا لازم است — اگر خودِ کسر بشکند، خطِ کسری روی جمله‌های
+     اشتباه کشیده می‌شود. فرمول اما باید بتواند بین عامل‌ها بشکند، وگرنه بلوک
+     از عرض صفحه پهن‌تر می‌شود و در چیدمان راست‌به‌چپ کل صفحه را بیرون می‌راند. */
+  .frac {
+    display: inline-block;
+    vertical-align: -0.55em;
+    text-align: center;
+    margin: 0 0.35em;
+    white-space: nowrap;
+  }
+  .frac > span { display: block; padding: 0 0.35em; }
+  .frac .den { border-top: 1.2px solid var(--ink); padding-top: 1px; }
+
+  sub, sup { font-size: 0.72em; }
+
+  /* ---------- جدول ---------- */
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 3.5mm 0;
+    font-size: 10pt;
+    page-break-inside: avoid;
+  }
+  th, td {
+    border: 1px solid var(--rule);
+    padding: 1.8mm 2.5mm;
+    text-align: right;
+    vertical-align: top;
+  }
+  th { background: var(--box); font-weight: 700; color: #22333d; }
+  td.mono, th.mono { direction: ltr; text-align: left; font-family: "DejaVu Sans Mono", monospace; font-size: 8.8pt; }
+
+  /* ---------- کادر یادداشت ---------- */
+  .note-box {
+    background: #fbf7ec;
+    border-right: 3px solid #c99a2e;
+    padding: 3mm 4mm;
+    margin: 3.5mm 0;
+    font-size: 10.2pt;
+    page-break-inside: avoid;
+    border-radius: 0 3px 3px 0;
+  }
+  .note-box b { color: #8a6414; }
+
+  .slide {
+    display: inline-block;
+    background: var(--code);
+    border: 1px solid var(--rule);
+    border-radius: 3px;
+    padding: 0.3mm 1.5mm;
+    font-size: 8.6pt;
+    direction: ltr;
+    unicode-bidi: isolate;
+    font-family: "DejaVu Sans Mono", monospace;
+    color: var(--dim);
+  }
+
+  pre {
+    background: var(--code);
+    padding: 3mm 4mm;
+    font-size: 8.8pt;
+    line-height: 1.65;
+    overflow: visible;
+    white-space: pre-wrap;
+    border-radius: 3px;
+    page-break-inside: avoid;
+    margin: 3mm 0;
+  }
+
+  .pipeline {
+    background: var(--box);
+    padding: 4mm;
+    text-align: center;
+    font-size: 9.6pt;
+    direction: ltr;
+    font-family: "DejaVu Sans Mono", monospace;
+    line-height: 1.9;
+    border-radius: 3px;
+    margin: 3.5mm 0;
+    page-break-inside: avoid;
+  }
+
+  .pagebreak { page-break-before: always; }
+
+  /* فهرست مطالب */
+  .toc { font-size: 10.6pt; line-height: 2.2; }
+  .toc a { color: var(--ink); text-decoration: none; }
+  .toc .num { color: var(--accent); font-weight: 700; margin-left: 2mm; }
+</style>
+</head>
+<body>
+
+<div class="cover">
+  <h1>سامانه‌ی جست‌وجوی دومَوتوره و تولید مبتنی بر بازیابی</h1>
+  <div class="sub">مستند پیاده‌سازی پروژه‌ی پایانی درس بازیابی اطلاعات نوین</div>
+  <hr>
+  <div class="sub" style="font-size:11.5pt">
+    Dual-Engine Document Search &amp; RAG System
+  </div>
+  <div class="meta">
+    دانشگاه صنعتی شریف — پردیس بین‌الملل<br>
+    درس: بازیابی اطلاعات نوین<br>
+    مدرس: امیرعلی قهرمانی<br><br>
+    این مستند توضیح می‌دهد که هر بخش سامانه <b>چگونه</b> پیاده‌سازی شده،<br>
+    با چه <b>فرمولی</b> محاسبه می‌شود، و به کدام <b>اسلاید درس</b> برمی‌گردد.
+  </div>
+</div>
+
+<h2 id="toc">فهرست مطالب</h2>
+<div class="toc">
+  <span class="num">۱.</span> معماری کلی و جریان داده<br>
+  <span class="num">۲.</span> خط لوله‌ی نمایه‌سازی: پارس، قطعه‌بندی، دو نمایه<br>
+  <span class="num">۳.</span> پیش‌پردازش متن: از واژه تا ترم<br>
+  <span class="num">۴.</span> نمایه‌ی معکوس و ساختارهای داده<br>
+  <span class="num">۵.</span> مدل فضای برداری (VSM) با وزن‌دهی lnc.ltc<br>
+  <span class="num">۶.</span> انتخاب K سند برتر با هیپ کمینه<br>
+  <span class="num">۷.</span> بازیابی نادقیقِ K برتر: فهرست قهرمانان و حذف نمایه<br>
+  <span class="num">۸.</span> مدل احتمالاتی Okapi BM25<br>
+  <span class="num">۹.</span> بازخورد شبه‌ربط با الگوریتم Rocchio<br>
+  <span class="num">۱۰.</span> موتور معنایی و فرایند RAG<br>
+  <span class="num">۱۱.</span> همگام‌سازی دو نمایه<br>
+  <span class="num">۱۲.</span> جدول کامل پارامترها<br>
+  <span class="num">۱۳.</span> نگاشت پیاده‌سازی به اسلایدهای درس<br>
+</div>
+
+<!-- ============================================================ -->
+<h2 id="s1">۱. معماری کلی و جریان داده</h2>
+
+<p>
+سامانه دو انبار داده‌ی موازی نگه می‌دارد که هر دو از یک منبع حقیقت واحد
+(پایگاه‌داده‌ی SQLite) مشتق می‌شوند: یک <b>نمایه‌ی معکوس</b> که از صفر نوشته شده و
+موتورهای واژگانی روی آن کار می‌کنند، و یک <b>پایگاه‌داده‌ی برداری</b> (ChromaDB) که
+بازیابی معنایی و RAG روی آن انجام می‌شود.
+</p>
+
+<div class="pipeline">
+upload (.pdf / .docx)<br>
+&darr;<br>
+parse &rarr; chunk (500 words, 50 overlap)<br>
+&darr;<br>
+&nbsp;&nbsp;&nbsp;&#9484;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9516;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9488;<br>
+inverted index (tf, df, norms) &nbsp;&nbsp; Chroma (384-dim vectors)<br>
+&nbsp;&nbsp;&nbsp;&darr;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&darr;<br>
+VSM &nbsp;/&nbsp; BM25 &nbsp;/&nbsp; Rocchio &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; RAG (retrieve &rarr; LLM)
+</div>
+
+<p>
+هر سه موتور یک امضای یکسان دارند —
+<code>(query, k, mode, prf) &rarr; {"hits", "scored"}</code> —
+و در <code>engines/registry.py</code> در یک دیکشنری ساده ثبت شده‌اند. مقدار
+<code>scored</code> اندازه‌ی مجموعه‌ی نامزدهاست که واقعاً امتیازدهی شده، و همان
+عددی است که صرفه‌جویی روش‌های نادقیق را قابل اندازه‌گیری می‌کند.
+</p>
+
+<h3>واحد بازیابی: سند، نه قطعه</h3>
+<p>
+یک تصمیم بنیادی که در سرتاسر کد رعایت شده این است که <b>واحد امتیازدهی، سند است
+نه قطعه</b>. قطعه‌بندی یک ضرورت فنیِ پنجره‌ی متنیِ مدل تعبیه‌سازی است، نه چیزی که
+کاربر دنبالش می‌گردد. این تصمیم سه پیامد ریاضی مستقیم دارد:
+</p>
+<ul>
+  <li><code>df</code> یعنی «بسامد سندی»؛ اگر روی قطعه‌ها شمرده شود، دیگر
+      idf نیست و نادر بودن یک ترم به شیوه‌ی تصادفیِ تکه‌تکه‌شدن متن وابسته می‌شود.</li>
+  <li>پارامتر <code>b</code> در BM25 برای مهار سندهای بلند وجود دارد؛ اما قطعه‌بندی
+      به‌طور ساختاری طول همه‌ی قطعه‌ها را تقریباً یکسان می‌کند، پس نرمال‌سازی روی
+      طول قطعه، واریانسی را تصحیح می‌کند که خودِ قطعه‌بندی از بین برده است.</li>
+  <li>یک سند بلند نباید بتواند با تقسیم‌شدن به چند قطعه‌ی کوتاه از جریمه‌ی طول
+      فرار کند و چند جای فهرست نتایج را اشغال کند.</li>
+</ul>
+
+<p>
+بنابراین نمایه در یک گذر، <b>دو سطح</b> می‌سازد: سطح قطعه (برای RAG و برای انتخاب
+متن نمونه) و سطح سند (برای امتیازدهی VSM و BM25 و Rocchio).
+</p>
+
+<!-- ============================================================ -->
+<h2 id="s2">۲. خط لوله‌ی نمایه‌سازی</h2>
+
+<h3>۲.۱ پارس فایل</h3>
+<p>
+فایل‌های <code>.pdf</code> با کتابخانه‌ی <code>PyMuPDF</code> و فایل‌های
+<code>.docx</code> با <code>python-docx</code> خوانده می‌شوند
+(<code>services/ingest.py</code>). خروجی هر پارسر یک زوج
+<code>(text, title)</code> است؛ اگر فایل عنوان فرادادِ‌ای نداشته باشد، نام فایلی
+که کاربر انتخاب کرده مبنا قرار می‌گیرد — نه مسیر فایل موقت، چون در غیر این صورت
+سند با نامی مثل <code>tmpoqta_c1i</code> در فهرست ظاهر می‌شود.
+</p>
+
+<h3>۲.۲ قطعه‌بندی</h3>
+<p>
+از <code>RecursiveCharacterTextSplitter</code> استفاده شده که مرزهای پاراگراف و
+جمله را محترم می‌شمارد. نکته‌ی ظریف پیاده‌سازی این است که مشخصات پروژه اندازه‌ی
+قطعه را برحسب <b>کلمه</b> تعریف کرده، در حالی که این کلاس به‌طور پیش‌فرض
+<b>کاراکتر</b> می‌شمارد؛ بنابراین تابع طول جایگزین شده است:
+</p>
+<pre>_splitter = RecursiveCharacterTextSplitter(
+    chunk_size=500, chunk_overlap=50,
+    length_function=lambda t: len(t.split()),   # words, not characters
+)</pre>
+<p>
+همپوشانی ۵۰ کلمه‌ای تضمین می‌کند جمله‌ای که دقیقاً روی مرز دو قطعه می‌افتد، در
+هیچ‌کدام نصفه نماند.
+</p>
+
+<h3>۲.۳ نمایه‌سازی دوگانه</h3>
+<p>
+هر قطعه هم‌زمان به دو انبار می‌رود: توکن‌ها و بسامدشان به نمایه‌ی معکوس، و متن خام
+پس از تعبیه‌سازی به Chroma. شناسه‌ی قطعه در هر دو یکسان است
+(<code>{doc_id}:{ordinal}</code>) و همین است که حذف همگام را به یک <b>جست‌وجوی
+کلیدی</b> تبدیل می‌کند، نه پویش کل انبار.
+</p>
+
+<!-- ============================================================ -->
+<h2 id="s3">۳. پیش‌پردازش متن: از واژه تا ترم</h2>
+
+<p>
+اسلاید ۵ فصل سوم تفاوت «واژه» و «ترم» را تعریف می‌کند: واژه رشته‌ای است که در متن
+دیده می‌شود، و ترم یک کلاس هم‌ارزیِ نرمال‌شده است. کل ماژول
+<code>engines/lexical/text.py</code> برای همین تبدیل نوشته شده، و مراحل دقیقاً به
+همان ترتیبی‌اند که اسلایدها معرفی می‌کنند:
+</p>
+
+<table>
+<tr><th style="width:22%">مرحله</th><th style="width:30%">پیاده‌سازی</th><th>نمونه و دلیل</th></tr>
+<tr>
+  <td>حذف نقطه در سرواژه‌ها <span class="slide">s11</span></td>
+  <td class="mono">_ACRONYM_RE</td>
+  <td><span class="ltr">U.S.A. &rarr; USA</span> — الگو محدود به دنباله‌ی «حرف+نقطه» است تا قاعده‌ی عمومیِ «هر نقطه را حذف کن» مرزهای جمله‌ای را که استخراج PDF بدون فاصله می‌گذارد به هم نچسباند.</td>
+</tr>
+<tr>
+  <td>حذف خط تیره <span class="slide">s11</span></td>
+  <td class="mono">_HYPHEN_RE</td>
+  <td><span class="ltr">anti-discriminatory &rarr; antidiscriminatory</span> — فقط بین دو نویسه‌ی واژه‌ای.</td>
+</tr>
+<tr>
+  <td>حذف اعراب و تشدید <span class="slide">s22</span></td>
+  <td class="mono">NFKD + combining</td>
+  <td><span class="ltr">résumé &rarr; resume</span>؛ همین گام حرکات عربی و لیگاتورهای PDF (<span class="ltr">ﬁle &rarr; file</span>) را هم یکدست می‌کند.</td>
+</tr>
+<tr>
+  <td>یکسان‌سازی حروف بزرگ و کوچک <span class="slide">s14</span></td>
+  <td class="mono">.lower()</td>
+  <td>معیار اسلاید: «کاربر احتمالاً چطور پرس‌وجو را می‌نویسد؟»</td>
+</tr>
+<tr>
+  <td>توکن‌سازی <span class="slide">s6</span></td>
+  <td class="mono">[^\W_]+</td>
+  <td>الگوی قدیمی‌تر <span class="ltr">[a-z0-9]+</span> برای فارسی و عربی و سیریلیک صفر توکن تولید می‌کرد؛ این الگو یونیکد-آگاه است.</td>
+</tr>
+<tr>
+  <td>ریشه‌یابی <span class="slide">s17-18</span></td>
+  <td class="mono">snowball "porter"</td>
+  <td><span class="ltr">organize / organizes / organizing &rarr; organ</span>. اسلاید تصریح می‌کند شکل دقیق ریشه اهمیتی ندارد، فقط کلاس هم‌ارزی مهم است.</td>
+</tr>
+</table>
+
+<div class="note-box">
+<b>چرا فهرست ایست‌واژه نداریم؟</b>
+اسلاید ۱۰ می‌گوید روند عمومی به سمت حذف‌نکردنِ ایست‌واژه‌هاست، و از آن مهم‌تر:
+پیکره‌ی این سامانه <b>متغیر</b> است — کاربر هر لحظه سند اضافه یا حذف می‌کند، پس
+هر فهرستی که از بسامد پیکره ساخته شود بلافاصله کهنه می‌شود. به‌جای آن، ترم‌های
+پُربسامد در زمان پرس‌وجو با «حذف نمایه» بر پایه‌ی idf کنار گذاشته می‌شوند
+(بخش ۷)، که هیچ فهرست ذخیره‌شده‌ای لازم ندارد و خودش را با پیکره تطبیق می‌دهد.
+</div>
+
+<div class="note-box">
+<b>یک مسیر، نه دو مسیر.</b>
+اسلاید ۱۱ تأکید می‌کند: «حیاتی است که متن نمایه‌شده و ترم‌های پرس‌وجو به یک شکل
+نرمال شوند.» به همین دلیل <code>tokenize()</code> تنها درِ ورودی است: نوشتن در
+نمایه، VSM، BM25، Rocchio و حتی برجسته‌سازی ترم‌ها در متن نمونه همگی همین یک
+تابع را صدا می‌زنند، پس امکان ندارد دو طرف به دو کلاس هم‌ارزی متفاوت برسند.
+</div>
+
+<!-- ============================================================ -->
+<h2 id="s4">۴. نمایه‌ی معکوس و ساختارهای داده</h2>
+
+<p>کلاس <code>InvertedIndex</code> این نگاشت‌ها را نگه می‌دارد:</p>
+
+<table>
+<tr><th style="width:30%" class="mono">structure</th><th style="width:34%">نگاشت</th><th>نقش</th></tr>
+<tr><td class="mono">postings</td><td class="mono">term &rarr; {chunk_id: tf}</td><td>نمایه‌ی معکوس اصلی، در سطح قطعه</td></tr>
+<tr><td class="mono">forward</td><td class="mono">chunk_id &rarr; {term: tf}</td><td>حذف در زمان <span class="ltr">O(terms)</span></td></tr>
+<tr><td class="mono">chunk_norm</td><td class="mono">chunk_id &rarr; float</td><td>انتخاب قطعه‌ی متن نمونه</td></tr>
+<tr><td class="mono">doc_forward</td><td class="mono">doc_id &rarr; {term: tf}</td><td>بسامد ترم در کل سند (جمعِ قطعه‌ها)</td></tr>
+<tr><td class="mono">doc_postings</td><td class="mono">term &rarr; {doc_id}</td><td>محاسبه‌ی <span class="ltr">df</span></td></tr>
+<tr><td class="mono">doc_len</td><td class="mono">doc_id &rarr; int</td><td><span class="ltr">dl</span> در BM25</td></tr>
+<tr><td class="mono">doc_norm</td><td class="mono">doc_id &rarr; float</td><td>مؤلفه‌ی <span class="ltr">c</span> در <span class="ltr">lnc</span></td></tr>
+</table>
+
+<h3>۴.۱ بسامد سندی و idf</h3>
+<div class="formula">
+  df<sub>t</sub> = |{ d : t &isin; d }| &nbsp;&nbsp;&nbsp;&nbsp;
+  idf<sub>t</sub> = log<sub>10</sub>
+  <span class="frac"><span>N</span><span class="den">df<sub>t</sub></span></span>
+  <span class="note">N تعداد کل اسناد است؛ برای ترمِ دیده‌نشده و برای ترمی که در همه‌ی اسناد هست، idf برابر صفر می‌شود</span>
+</div>
+<p>
+این‌که <code>idf</code> برای ترم موجود در همه‌ی اسناد دقیقاً صفر می‌شود، صرفاً یک
+جزئیات ریاضی نیست: همان چیزی است که باعث می‌شود چنین ترمی در هیچ امتیازی سهم
+نداشته باشد، و در نتیجه در کد چند جا با شرط <code>idf(t) &gt; 0</code> کلاً از
+مجموعه‌ی نامزدها کنار گذاشته می‌شود.
+</p>
+
+<h3>۴.۲ نمایه‌ی رو به جلو و هزینه‌ی آن</h3>
+<p>
+نگه‌داشتن <code>forward</code> حافظه را دو برابر می‌کند، و در عوض حذف را <b>دقیق و
+ارزان</b> می‌سازد: حذف یک سند فقط ترم‌هایی را لمس می‌کند که واقعاً در آن سند بودند،
+به‌جای پویش کل واژگان. در مقیاس این پروژه معامله‌ی درستی است.
+</p>
+
+<h3>۴.۳ نسخه‌بندی نمایه</h3>
+<p>
+نمایه به‌صورت <code>pickle</code> ذخیره می‌شود، اما همراه با دو برچسب:
+</p>
+<pre>ANALYZER = "s11-periods+hyphens/s22-deaccent/s14-fold/s17-porter"
+SCHEMA   = 2</pre>
+<p>
+اگر روش تبدیل واژه به ترم عوض شود، <code>ANALYZER</code> تغییر می‌کند و نمایه
+بازسازی اجباری می‌شود. بررسی مبتنی بر «تعداد قطعه‌ها» اینجا کار نمی‌کند: تغییر
+تحلیل‌گر تعداد را دست‌نخورده می‌گذارد و فقط <b>ترم‌ها</b> جابه‌جا می‌شوند، پس نمایه
+بی‌سروصدا به پرس‌وجویی که یک‌جور توکن‌سازی شده با پستینگ‌هایی که جور دیگری ساخته
+شده‌اند پاسخ می‌داد.
+</p>
+
+<!-- ============================================================ -->
+<h2 id="s5">۵. مدل فضای برداری با وزن‌دهی lnc.ltc</h2>
+
+<p>
+اسلاید ۴۱ فصل «امتیازدهی» نمادگذاری SMART را به شکل <code>ddd.qqq</code> معرفی
+می‌کند و <code>lnc.ltc</code> را «یک طرح وزن‌دهی بسیار استاندارد» می‌نامد. این
+سامانه دقیقاً همین را پیاده کرده است:
+</p>
+
+<table>
+<tr><th style="width:14%">سمت</th><th style="width:14%">کد</th><th>معنا</th></tr>
+<tr><td>سند</td><td class="mono">lnc</td><td><b>l</b>ogarithmic tf، بدون idf (<b>n</b>o)، نرمال‌سازی <b>c</b>osine</td></tr>
+<tr><td>پرس‌وجو</td><td class="mono">ltc</td><td><b>l</b>ogarithmic tf، با <b>t</b>f-idf، نرمال‌سازی <b>c</b>osine</td></tr>
+</table>
+
+<h3>۵.۱ وزن لگاریتمی بسامد</h3>
+<div class="formula">
+  w<sub>tf</sub>(tf) =
+  <span style="display:inline-block; vertical-align:middle">
+    { &nbsp; 1 + log<sub>10</sub>(tf) &nbsp;&nbsp; tf &gt; 0 &nbsp;;&nbsp;&nbsp; 0 &nbsp;&nbsp; tf = 0 }
+  </span>
+  <span class="note">اسلاید s17 — ده بار تکرار یک ترم، سند را ده برابر مرتبط‌تر نمی‌کند</span>
+</div>
+
+<h3>۵.۲ بردار پرس‌وجو (ltc)</h3>
+<div class="formula">
+  w<sub>t,q</sub> = (1 + log<sub>10</sub> tf<sub>t,q</sub>) &middot; idf<sub>t</sub>
+  &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+  q&#770;<sub>t</sub> =
+  <span class="frac">
+    <span>w<sub>t,q</sub></span>
+    <span class="den">&radic;( &Sigma;<sub>t&prime;&isin;q</sub> w<sub>t&prime;,q</sub><sup>2</sup> )</span>
+  </span>
+</div>
+
+<h3>۵.۳ بردار سند (lnc)</h3>
+<div class="formula">
+  w<sub>t,d</sub> = 1 + log<sub>10</sub> tf<sub>t,d</sub>
+  &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+  ||d|| = &radic;( &Sigma;<sub>t&isin;d</sub> w<sub>t,d</sub><sup>2</sup> )
+  <span class="note">tf<sub>t,d</sub> جمعِ بسامد ترم روی همه‌ی قطعه‌های آن سند است، و ||d|| روی کل سند محاسبه می‌شود</span>
+</div>
+
+<div class="note-box">
+<b>چرا سمت سند idf ندارد؟</b>
+همان حرف <code>n</code> در <code>lnc</code> است و عمدی است. مقدار idf نادر بودن
+یک ترم در <b>کل پیکره</b> را توصیف می‌کند — خاصیتی از ترم، نه از یک سند خاص. اگر
+در هر دو سمت اعمال شود، عملاً idf به توان دو می‌رسد و اثرش دو برابر می‌شود.
+</div>
+
+<h3>۵.۴ امتیاز نهایی</h3>
+<div class="formula">
+  score(q, d) = &Sigma;<sub>t &isin; q &cap; d</sub> &nbsp;
+  q&#770;<sub>t</sub> &nbsp;&middot;&nbsp;
+  <span class="frac">
+    <span>1 + log<sub>10</sub> tf<sub>t,d</sub></span>
+    <span class="den">||d||</span>
+  </span>
+  <span class="note">چون هر دو بردار واحدند، این حاصل‌ضرب داخلی دقیقاً همان شباهت کسینوسی است</span>
+</div>
+
+<p>
+نکته‌ی کارایی: جمع فقط روی ترم‌های پرس‌وجو زده می‌شود و فقط پستینگ‌های همان ترم‌ها
+پیمایش می‌شوند. پس هزینه متناسب با <b>طول پستینگ‌های پرس‌وجو</b> است، نه با اندازه‌ی
+پیکره <span class="slide">8-Scoring s5</span>.
+</p>
+
+<h3>۵.۵ انتخاب متن نمونه</h3>
+<p>
+واحد رتبه‌بندی سند است، اما رابط کاربری به یک قطعه‌ی متن نیاز دارد. تابع
+<code>best_chunk</code> برای هر سند برنده، قطعه‌ای را برمی‌گرداند که بیشترین
+امتیاز <code>ltc</code> را نسبت به پرس‌وجو دارد — یعنی همان پاراگرافی که سند را
+به این رتبه رسانده، نه صرفاً اولین پاراگراف آن.
+</p>
+<div class="formula">
+  best(d, q) = arg max<sub>c &isin; chunks(d)</sub> &nbsp;
+  &Sigma;<sub>t &isin; q &cap; c</sub> (1 + log<sub>10</sub> tf<sub>t,c</sub>) &middot; idf<sub>t</sub>
+</div>
+
+<!-- ============================================================ -->
+<h2 id="s6">۶. انتخاب K سند برتر با هیپ کمینه</h2>
+
+<p>
+اسلایدهای ۱۳ و ۱۴ فصل «امتیازدهی در سامانه‌ی جست‌وجو» می‌گویند برای یافتن K سند
+برتر نیازی به مرتب‌سازی هر N امتیاز نیست. کلاس <code>TopKMinHeap</code> یک هیپ
+دودویی کمینه با ظرفیت ثابت است:
+</p>
+
+<pre>if len(heap) &lt; k:            heap.append(...); sift_up(...)      # O(log k)
+elif score &gt; heap[0][0]:     heap[0] = (...);  sift_down(0)      # O(log k)
+else:                        reject                              # O(1)</pre>
+
+<div class="formula">
+  O(N log K) &nbsp;&nbsp; در برابر &nbsp;&nbsp; O(N log N)
+  <span class="note">ریشه‌ی هیپ همیشه ضعیف‌ترینِ K موردِ نگه‌داشته‌شده است، پس رد کردن یک نامزد در زمان ثابت انجام می‌شود</span>
+</div>
+
+<div class="note-box">
+<b>یادداشت پیاده‌سازی:</b> در کد معمولی، <code>heapq.nlargest</code> از کتابخانه‌ی
+استاندارد پایتون همین کار را در یک خط انجام می‌دهد. هیپ اینجا دستی نوشته شده
+چون «انتخاب K برتر بدون مرتب‌سازی همه‌ی N» دقیقاً همان چیزی است که درس می‌خواهد
+نشان داده شود، و اسلاید صراحتاً هیپ کمینه را نام می‌برد.
+</div>
+
+<!-- ============================================================ -->
+<h2 id="s7">۷. بازیابی نادقیقِ K برتر</h2>
+
+<p>
+اسلاید ۱۸ ایده‌ی کلی را چنین بیان می‌کند: مجموعه‌ی <span class="ltr">A</span> از
+نامزدها را چنان انتخاب کن که <span class="ltr">|A| &lt;&lt; N</span> باشد و لزوماً
+همه‌ی K برتر را در بر نداشته باشد، اما بسیاری از آن‌ها را داشته باشد. اسلاید ۱۹
+گزینه‌ها را فهرست می‌کند؛ دو مورد از آن‌ها پیاده‌سازی شده‌اند و هر دو بین VSM و
+BM25 مشترک‌اند.
+</p>
+
+<h3>۷.۱ فهرست قهرمانان <span class="slide">s26</span></h3>
+<p>
+برای هر ترم، <code>r</code> سندی که بیشترین <code>tf</code> را برای آن ترم دارند
+از پیش نگه داشته می‌شوند و در زمان پرس‌وجو فقط همان‌ها امتیازدهی می‌شوند
+(<code>r = 50</code>).
+</p>
+<div class="formula">
+  A = &bigcup;<sub>t &isin; q</sub> champions(t) &nbsp;,&nbsp;
+  champions(t) = top-r<sub>d &isin; postings(t)</sub> tf<sub>t,d</sub>
+</div>
+<div class="note-box">
+<b>یک هشدار صادقانه در کد:</b> فهرست قهرمانان برای BM25 تقریب سست‌تری است تا برای
+VSM. اسلاید ۲۶ این ایده را برای <span class="ltr">tf-idf</span> تعریف می‌کند که
+امتیازش نسبت به <span class="ltr">tf</span> یکنواخت صعودی است؛ اما BM25 علاوه بر
+آن بر طول سند تقسیم می‌کند، پس یک سندِ بلند با <span class="ltr">tf</span> بالا
+می‌تواند از سندِ کوتاهی با <span class="ltr">tf</span> پایین‌تر — که اصلاً وارد
+فهرست نشده — پایین‌تر بایستد. هر دو حالت طبق تعریف ناایمن‌اند
+<span class="slide">s16</span>؛ این یکی فقط کمی سست‌تر است.
+</div>
+
+<h3>۷.۲ حذف نمایه <span class="slide">s21, s24</span></h3>
+<p>
+فقط ترم‌های پرس‌وجو با idf بالا نگه داشته می‌شوند. آستانه به‌جای یک ثابتِ سراسری،
+کسری از بالاترین idf <b>در همان پرس‌وجو</b> است:
+</p>
+<div class="formula">
+  keep t &nbsp;&hArr;&nbsp; idf<sub>t</sub> &ge; &rho; &middot; max<sub>t&prime;&isin;q</sub> idf<sub>t&prime;</sub>
+  &nbsp;&nbsp;&nbsp;&nbsp; ( &rho; = 0.3 )
+  <span class="note">مثال اسلاید: پرس‌وجوی «catcher in the rye» فقط از روی catcher و rye امتیاز می‌گیرد</span>
+</div>
+<p>
+مزیت نسبی بودن آستانه این است که پرس‌وجویی که همه‌ی ترم‌هایش یکنواخت پرتکرارند،
+خودش را به صفر حذف نمی‌کند — چون بالاترین idf همیشه آستانه‌ی خودش را رد می‌کند.
+پارامتر <code>&rho;</code> در سطح تنظیمات به بازه‌ی <span class="ltr">[0, 1]</span>
+محدود شده تا این خاصیت قابل نقض نباشد.
+</p>
+
+<!-- ============================================================ -->
+<h2 id="s8">۸. مدل احتمالاتی Okapi BM25</h2>
+
+<p>
+اسلایدهای ۲۹ تا ۳۲ فصل «بازیابی احتمالاتی» BM25 را به‌عنوان پاسخ به این پرسش
+معرفی می‌کنند: «چگونه بسامد ترم و نرمال‌سازی طول را به مدل احتمالاتی اضافه کنیم؟»
+فرمول کامل پیاده‌شده:
+</p>
+
+<div class="formula" style="font-size:10.2pt; line-height:2.6">
+  <span style="white-space:nowrap">score<sub>BM25</sub>(q, d) &nbsp;=&nbsp; &Sigma;<sub>t &isin; q</sub> &nbsp; idf<sub>t</sub></span>
+  &nbsp;&middot;&nbsp;
+  <span class="frac">
+    <span>(k<sub>1</sub> + 1) &middot; tf<sub>t,d</sub></span>
+    <span class="den">k<sub>1</sub> &middot; ( 1 &minus; b + b &middot; dl<sub>d</sub> / avgdl ) + tf<sub>t,d</sub></span>
+  </span>
+  &nbsp;&middot;&nbsp;
+  <span class="frac">
+    <span>(k<sub>3</sub> + 1) &middot; qf<sub>t</sub></span>
+    <span class="den">k<sub>3</sub> + qf<sub>t</sub></span>
+  </span>
+  <span class="note">k<sub>1</sub> = 1.5 &nbsp;،&nbsp; b = 0.75 &nbsp;،&nbsp; k<sub>3</sub> = 1.2 — بازه‌های پیشنهادی اسلاید s32</span>
+</div>
+
+<div class="formula" style="font-size:10pt">
+  dl<sub>d</sub> = &Sigma;<sub>c &isin; chunks(d)</sub> |c| &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+  avgdl =
+  <span class="frac">
+    <span>1</span><span class="den">N</span>
+  </span>
+  &Sigma;<sub>d&prime;</sub> dl<sub>d&prime;</sub>
+  &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+  qf<sub>t</sub> = tf<sub>t,q</sub>
+  <span class="note">dl طول سند برحسب تعداد توکن است، و qf بسامد ترم در خودِ پرس‌وجو</span>
+</div>
+
+<p>سه بخش فرمول، هرکدام یک کار مشخص انجام می‌دهند:</p>
+
+<table>
+<tr><th style="width:16%">جزء</th><th>نقش</th></tr>
+<tr>
+  <td class="mono">idf<sub>t</sub></td>
+  <td>ترم‌های نادر بیشتر می‌ارزند، دقیقاً مثل VSM. اسلایدهای ۳۰ و ۳۱ آن را
+      <span class="ltr">log(N/df)</span> می‌نویسند — همان تقریبِ کل‌پیکره‌ای که VSM
+      استفاده می‌کند — پس این موتور همان <code>index.idf</code> را صدا می‌زند و
+      تعریف دومی نمی‌سازد. صورت رابرتسون-اسپارک‌جونز،
+      <span class="ltr">log((N&minus;df+0.5)/(df+0.5))</span>، گزینه‌ی رایج دیگر
+      است؛ اما برای ترمی که در بیش از نیمی از پیکره باشد منفی می‌شود، در حالی که
+      صورت ساده هرگز منفی نمی‌شود.</td>
+</tr>
+<tr>
+  <td class="mono">k<sub>1</sub>, b</td>
+  <td>اشباع بسامد ترم و نرمال‌سازی طول — همان دو چیزی که مدل استقلال دودویی نداشت
+      <span class="slide">s29</span>. هم <span class="ltr">dl</span> و هم
+      <span class="ltr">avgdl</span> روی <b>سند</b> اندازه‌گیری می‌شوند، به دلیلی
+      که در بخش ۱ گفته شد.</td>
+</tr>
+<tr>
+  <td class="mono">k<sub>3</sub></td>
+  <td>همان اشباع، این‌بار روی سمت پرس‌وجو. فقط برای پرس‌وجوهای بلندی معنا دارد که
+      ترمی در آن‌ها تکرار شده <span class="slide">s32</span>؛ برای پرس‌وجوی کوتاه
+      معمولی <span class="ltr">qf = 1</span> است و این ضریب برای همه‌ی اسناد ثابت
+      می‌ماند، پس نمی‌تواند رتبه‌بندی را تغییر دهد.</td>
+</tr>
+</table>
+
+<h3>۸.۱ رفتار اشباع — تفاوت اصلی با VSM</h3>
+<p>
+اگر <span class="ltr">tf</span> بزرگ شود، کسر میانی به سقف
+<span class="ltr">(k<sub>1</sub>+1)</span> میل می‌کند و بیش از آن بالا نمی‌رود.
+در VSM، وزن <span class="ltr">1 + log tf</span> سقف ندارد و بی‌کران — هرچند کند —
+رشد می‌کند. این تفاوت دقیقاً همان چیزی است که در نقشه‌ی حرارتی مقایسه‌ای دیده
+می‌شود: ترمی که در VSM یک ستون را به تنهایی می‌بلعد، در BM25 صاف می‌شود و جا برای
+سهم بقیه‌ی ترم‌ها باز می‌کند.
+</p>
+
+<!-- ============================================================ -->
+<h2 id="s9">۹. بازخورد شبه‌ربط با الگوریتم Rocchio</h2>
+
+<p>
+بازخورد ربط واقعی به قضاوت کاربر نیاز دارد. بازخورد <b>شبه</b>‌ربط فرض می‌کند
+K سند برتر یک بازیابی اولیه مرتبط‌اند و چند سند بعدی نامرتبط
+<span class="slide">10-RF s21</span>، سپس Rocchio را روی همین فرض اجرا و دوباره
+بازیابی می‌کند.
+</p>
+
+<div class="formula" style="font-size:11.5pt">
+  q&#8407;<sub>m</sub> = &alpha; &middot; q&#8407;<sub>0</sub>
+  &nbsp;+&nbsp; &beta; &middot;
+  <span class="frac"><span>1</span><span class="den">|D<sub>r</sub>|</span></span>
+  &Sigma;<sub>d&#8407;<sub>j</sub> &isin; D<sub>r</sub></sub> d&#8407;<sub>j</sub>
+  &nbsp;&minus;&nbsp; &gamma; &middot;
+  <span class="frac"><span>1</span><span class="den">|D<sub>nr</sub>|</span></span>
+  &Sigma;<sub>d&#8407;<sub>j</sub> &isin; D<sub>nr</sub></sub> d&#8407;<sub>j</sub>
+  <span class="note">&alpha; = 1.0 &nbsp;،&nbsp; &beta; = 0.75 &nbsp;،&nbsp; &gamma; = 0.15 &nbsp;،&nbsp; |D<sub>r</sub>| = 10 &nbsp;،&nbsp; |D<sub>nr</sub>| = 20</span>
+</div>
+
+<p>سه جزئیات از اسلایدها که به‌راحتی از قلم می‌افتند و اینجا رعایت شده‌اند:</p>
+<ol>
+  <li><b>برش وزن‌های منفی.</b> وزن منفی در مدل فضای برداری بی‌معناست، پس هر مؤلفه‌ی
+      منفیِ حاصل از جمله‌ی <span class="ltr">&gamma;</span> صفر می‌شود
+      <span class="slide">s12</span>.</li>
+  <li><b>کوتاه‌کردن پرس‌وجوی گسترش‌یافته.</b> Rocchio پرس‌وجویی بسیار بلند تولید
+      می‌کند و پرس‌وجوی بلند گران است؛ اسلایدها گسترش را به حدود ۲۰ ترم برتر
+      محدود می‌کنند <span class="slide">s20</span>. در کد، ترم‌های اصلی پرس‌وجو
+      هرگز حذف نمی‌شوند — محافظت از آن‌ها دقیقاً کاری است که
+      <span class="ltr">&alpha;</span> برای آن هست.</li>
+  <li><b>فضای برداری یکسان.</b> مرکزوارها از بردارهای <code>ltc</code> ساخته
+      می‌شوند، نه از وزن‌های <code>lnc</code> که نمایه ذخیره کرده. Rocchio سند را
+      به پرس‌وجو <i>اضافه</i> می‌کند، پس هر دو باید در یک فضا زندگی کنند و سمت
+      پرس‌وجو idf-دار است. مجموعه‌ی بازخورد فقط چند ده سند است، پس بازمحاسبه ارزان
+      است.</li>
+</ol>
+
+<p>جریان اجرا:</p>
+<div class="pipeline">
+rank(q₀, k=30) &rarr; D_r = hits[0:10], D_nr = hits[10:30]<br>
+&darr;<br>
+q_m = rocchio(q₀, D_r, D_nr) &rarr; clip negatives &rarr; top-20 terms &rarr; L2 normalize<br>
+&darr;<br>
+rank(q_m, k) &nbsp;&nbsp;&nbsp; scored = pass₁ + pass₂
+</div>
+
+<p>
+مقدار <code>scored</code> در این حالت جمع دو گذر است و می‌تواند از اندازه‌ی پیکره
+بزرگ‌تر شود، چون سندی که در هر دو گذر امتیاز گرفته دو بار شمرده می‌شود. به همین
+دلیل آرایه‌ی <code>passes</code> جداگانه برگردانده می‌شود تا رابط کاربری بتواند
+بنویسد «۶ + ۷ از ۹» به‌جای عبارت بی‌معنای «۱۳ از ۹».
+</p>
+
+<!-- ============================================================ -->
+<h2 id="s10">۱۰. موتور معنایی و فرایند RAG</h2>
+
+<p>
+تنها گام <b>جدید</b> نسبت به موتورهای واژگانی، آخرین گام است؛ هر چیزی پیش از آن
+همان مسئله‌ی بازیابی است با نمایشی متفاوت.
+</p>
+
+<div class="pipeline">
+question<br>
+&darr; (if follow-up) query rewriting via LLM<br>
+&darr;<br>
+embed &rarr; 384-dim unit vector<br>
+&darr;<br>
+Chroma cosine search &rarr; top-k chunks (k = 4)<br>
+&darr;<br>
+relevance floor: score ≥ 0.22 ?  &mdash;no&rarr;  refuse + list corpus topics<br>
+&darr; yes<br>
+numbered context &rarr; prompt &rarr; LLM &rarr; answer with [Doc N]<br>
+&darr;<br>
+parse citations &rarr; map back to chunks
+</div>
+
+<h3>۱۰.۱ تعبیه‌سازی</h3>
+<p>
+مدل <code>paraphrase-multilingual-MiniLM-L12-v2</code> به‌صورت محلی روی CPU اجرا
+می‌شود، بدون کلید API. بردارها با <code>normalize_embeddings=True</code> واحد
+می‌شوند، پس حاصل‌ضرب داخلی مستقیماً کسینوس است.
+</p>
+
+<div class="note-box">
+<b>انحراف آگاهانه از مشخصات پروژه.</b>
+مشخصات، مدل <code>all-MiniLM-L6-v2</code> را پیشنهاد می‌کند، اما آن مدل فقط
+انگلیسی است. در آزمایش روی همین پیکره، یک پرس‌وجوی فارسی در برابر پاراگرافی که
+دقیقاً به آن پاسخ می‌داد امتیاز ۰٫۰۷ گرفت، در حالی که همان پرسش به انگلیسی ۰٫۴۶
+گرفت — یعنی نویز، نه بازیابی. مدل چندزبانه‌ی هم‌خانواده بیش از ۵۰ زبان را در یک
+فضای مشترک هم‌تراز می‌کند، پس یک پرسش فارسی می‌تواند پاراگرافی انگلیسی را بازیابی
+کند. هزینه: حدود ۴۷۰ مگابایت، همان ۳۸۴ بُعد.
+</div>
+
+<h3>۱۰.۲ جست‌وجوی برداری</h3>
+<div class="formula">
+  sim(q, c) = cos(v&#8407;<sub>q</sub>, v&#8407;<sub>c</sub>) =
+  <span class="frac">
+    <span>v&#8407;<sub>q</sub> &middot; v&#8407;<sub>c</sub></span>
+    <span class="den">||v&#8407;<sub>q</sub>|| &middot; ||v&#8407;<sub>c</sub>||</span>
+  </span>
+  &nbsp;=&nbsp; 1 &minus; distance<sub>chroma</sub>
+  <span class="note">مجموعه با <span class="ltr">hnsw:space = cosine</span> ساخته شده؛ پیش‌فرض Chroma فاصله‌ی اقلیدسی مربعی است که برای بردارهای غیرواحد رتبه‌بندی متفاوتی می‌دهد</span>
+</div>
+
+<h3>۱۰.۳ کف ربط — نگهبان اصلی سامانه</h3>
+<p>
+بازیابی چگال هرگز «هیچ» برنمی‌گرداند؛ همیشه k نزدیک‌ترین بردار را برمی‌گرداند،
+هر قدر هم دور باشند <span class="slide">RAG s11</span>. بدون یک کف، پرسشی خارج از
+پیکره با متن نامربوط به مدل می‌رسد و کیفیت پاسخ فقط به خویشتن‌داری مدل وابسته
+می‌شود.
+</p>
+<div class="formula">
+  if &nbsp; max<sub>c</sub> sim(q, c) &lt; 0.22 &nbsp; &rarr; &nbsp; refuse, list corpus topics
+  <span class="note">اندازه‌گیری روی همین پیکره: پرسش‌های درون‌دامنه ۰٫۳۱ تا ۰٫۷۱ ، پرسش‌های بیرون‌دامنه ۰٫۰۷&minus; تا ۰٫۱۵ — عدد ۰٫۲۲ در شکاف می‌نشیند</span>
+</div>
+<p>
+این تصمیم قطعی است، هیچ توکنی هزینه ندارد و در چند میلی‌ثانیه پاسخ می‌دهد. همین
+شاخه به پرسش «چه کارهایی بلدی؟» هم خدمت می‌کند: آن پرسش هم از همه‌ی پاراگراف‌ها
+دور است، و فهرست‌کردن موضوعات پیکره دقیقاً پاسخ درست به آن است.
+</p>
+
+<h3>۱۰.۴ پرامپت و استناد</h3>
+<p>
+پاراگراف‌های بازیابی‌شده شماره‌گذاری می‌شوند (<code>[Doc 1]</code> تا
+<code>[Doc k]</code>) و همین شماره‌گذاری است که استناد را ممکن می‌کند. قواعد اصلی
+پرامپت:
+</p>
+<ul>
+  <li>فقط از پاراگراف‌های داده‌شده پاسخ بده؛ از دانش پیشین استفاده نکن
+      <span class="slide">RAG s35</span>.</li>
+  <li>هر ادعا را با نشانگر <code>[Doc N]</code> مستند کن.</li>
+  <li>به همان زبان پرسش پاسخ بده.</li>
+  <li>اگر پاراگراف‌ها فقط بخشی از پرسش را پوشش می‌دهند، همان بخش را پاسخ بده و
+      صریح بگو کدام بخش از این پیکره قابل پاسخ نیست.</li>
+</ul>
+
+<p>
+پس از تولید، الگوی <code>\[Doc\s*(\d+)\]</code> از متن پاسخ استخراج می‌شود و
+شماره‌ها به قطعه‌های واقعی نگاشت می‌شوند؛ فقط قطعه‌هایی که مدل واقعاً به آن‌ها
+ارجاع داده به‌عنوان منبع نمایش داده می‌شوند.
+</p>
+
+<div class="note-box">
+<b>متن بازیابی‌شده ورودی نامعتمد است</b> <span class="slide">RAG s44</span>.
+سندی در پیکره می‌تواند متنی حاوی دستور برای مدل داشته باشد («پرسش را نادیده بگیر
+و X را بنویس»). به همین دلیل متن بازیابی‌شده داخل تگ <code>&lt;passages&gt;</code>
+محصور شده و پرامپت صریحاً می‌گوید محتوای آن <b>داده</b> است برای نقل‌کردن، نه
+<b>دستور</b> برای اجرا.
+</div>
+
+<h3>۱۰.۵ بازنویسی پرس‌وجو</h3>
+<p>
+یک پیام پیگیرانه مثل «فقط همین؟» یا «چرا؟» معنایش را از مکالمه می‌گیرد، نه از
+خودش. تعبیه‌سازی آن به‌تنهایی برداری تولید می‌کند که به هیچ چیز خاصی نزدیک نیست،
+کف ربط ردش می‌کند و کاربر می‌شنود که پیگیریِ خودش خارج از پیکره است. اسلاید ۴۳
+درباره‌ی همین دسته از خطاها صریح است: بیشتر «توهم‌های RAG» در واقع
+<b>شکست بازیابی</b>‌اند.
+</p>
+<p>
+بنابراین پیش از تعبیه‌سازی، پیام با کمک LLM به یک پرسش خودایستا بازنویسی می‌شود
+<span class="slide">RAG s24</span>. سامانه برای <b>پرسش بازنویسی‌شده</b> بازیابی
+می‌کند اما به <b>پرسشی که کاربر تایپ کرده</b> پاسخ می‌دهد. اگر بازنویسی به هر
+دلیلی شکست بخورد، به پرسش اصلی برمی‌گردد: بازیابی روی پیگیریِ خام ضعیف است، اما
+از بازیابی روی پرسشی که مدل از خودش ساخته بهتر است.
+</p>
+
+<h3>۱۰.۶ پخش جریانی</h3>
+<p>
+مسیر <code>/api/search/stream</code> رویدادها را به‌صورت NDJSON (هر رویداد یک
+خط JSON) می‌فرستد: <code>rewriting</code>، <code>embedding</code>،
+<code>retrieving</code>، <code>reading</code> (به همراه قطعه‌های بازیابی‌شده)،
+سپس <code>delta</code>های متن و در پایان <code>done</code>. نکته این است که
+قطعه‌ها <b>پیش از</b> تولید حتی یک توکن ارسال می‌شوند، پس کاربر منابع را می‌بیند
+در حالی که هنوز منتظر پاسخ است.
+</p>
+
+<!-- ============================================================ -->
+<h2 id="s11">۱۱. همگام‌سازی دو نمایه</h2>
+
+<p>
+منبع حقیقت، جدول قطعه‌ها در SQLite است. هر دو نمایه از آن مشتق می‌شوند و هر دو
+تنها از یک نقطه نوشته می‌شوند: <code>services/corpus.py</code>. این محدودیت
+معماری، همگام‌سازی را از یک مسئله به یک ویژگی تبدیل می‌کند.
+</p>
+
+<table>
+<tr><th style="width:22%">عملیات</th><th>نمایه‌ی معکوس</th><th>Chroma</th></tr>
+<tr><td>افزودن سند</td><td class="mono">index.add(chunks, doc_id)</td><td class="mono">vectordb.add(chunks, doc_id)</td></tr>
+<tr><td>حذف سند</td><td class="mono">index.remove(chunk_ids)</td><td class="mono">vectordb.remove(chunk_ids)</td></tr>
+<tr><td>تشخیص کهنگی</td><td class="mono">analyzer / schema tag</td><td class="mono">embed_model metadata</td></tr>
+<tr><td>بازسازی</td><td class="mono">rebuild_from_db()</td><td class="mono">rebuild_from_db()</td></tr>
+</table>
+
+<p>
+شناسه‌ی قطعه در هر دو انبار یکسان است، پس حذف یک سند در هر دو طرف یک
+<b>جست‌وجوی کلیدی</b> است. پاسخ مسیر حذف، تعداد پستینگ‌ها و بردارهای حذف‌شده را
+برمی‌گرداند — همان شاهدی که سطر «همگام‌سازی نمایه» در جدول نمره‌دهی می‌خواهد.
+</p>
+
+<p>
+حذف بخشی از یک سند، نُرم آن سند را تغییر می‌دهد و نُرم را نمی‌شود ترم‌به‌ترم
+«کم کرد»؛ بنابراین <code>_recompute_doc</code> مجموع‌های سطح سند را از روی
+قطعه‌های باقی‌مانده <b>بازمحاسبه</b> می‌کند. این تنها جایی است که حالت سطح سند
+نوشته می‌شود، پس ممکن نیست <code>tf</code> و طول و نُرمِ یک سند با قطعه‌هایش
+ناسازگار شوند.
+</p>
+
+<!-- ============================================================ -->
+<h2 id="s12">۱۲. جدول کامل پارامترها</h2>
+
+<table>
+<tr><th style="width:26%" class="mono">parameter</th><th style="width:13%">مقدار</th><th>مرجع و دلیل</th></tr>
+
+<tr><td colspan="3" style="background:var(--box); font-weight:700">قطعه‌بندی</td></tr>
+<tr><td class="mono">chunk_size</td><td class="mono">500 words</td><td>مشخصات پروژه §2.1 (اسلایدهای RAG: ۱۰۰۰ کاراکتر)</td></tr>
+<tr><td class="mono">chunk_overlap</td><td class="mono">50 words</td><td>مشخصات پروژه §2.1</td></tr>
+
+<tr><td colspan="3" style="background:var(--box); font-weight:700">بازیابی واژگانی</td></tr>
+<tr><td class="mono">top_k</td><td class="mono">10</td><td>تعداد نتایج نمایش‌داده‌شده</td></tr>
+<tr><td class="mono">champion_r</td><td class="mono">50</td><td>8-Scoring s26 — r سند با بیشترین tf برای هر ترم</td></tr>
+<tr><td class="mono">elimination_ratio</td><td class="mono">0.3</td><td>8-Scoring s24 — کف نسبیِ idf، محدود به [0, 1]</td></tr>
+
+<tr><td colspan="3" style="background:var(--box); font-weight:700">BM25</td></tr>
+<tr><td class="mono">bm25_k1</td><td class="mono">1.5</td><td>مشخصات پروژه §3.2.2 (تمرین ۲ از ۱٫۲ استفاده کرده بود)</td></tr>
+<tr><td class="mono">bm25_b</td><td class="mono">0.75</td><td>11-Probabilistic s32</td></tr>
+<tr><td class="mono">bm25_k3</td><td class="mono">1.2</td><td>11-Probabilistic s32 — اشباع پرس‌وجوهای بلند</td></tr>
+
+<tr><td colspan="3" style="background:var(--box); font-weight:700">Rocchio</td></tr>
+<tr><td class="mono">prf_alpha</td><td class="mono">1.0</td><td rowspan="6">10-Relevance Feedback s12 و s20-21</td></tr>
+<tr><td class="mono">prf_beta</td><td class="mono">0.75</td></tr>
+<tr><td class="mono">prf_gamma</td><td class="mono">0.15</td></tr>
+<tr><td class="mono">prf_n_relevant</td><td class="mono">10</td></tr>
+<tr><td class="mono">prf_n_nonrelevant</td><td class="mono">20</td></tr>
+<tr><td class="mono">prf_expansion_terms</td><td class="mono">20</td></tr>
+
+<tr><td colspan="3" style="background:var(--box); font-weight:700">معنایی و RAG</td></tr>
+<tr><td class="mono">embed_model</td><td class="mono" style="font-size:7.6pt">paraphrase-multilingual<br>-MiniLM-L12-v2</td><td>۳۸۴ بُعد، چندزبانه — بخش ۱۰٫۱</td></tr>
+<tr><td class="mono">rag_top_k</td><td class="mono">4</td><td>RAG s43 — متن کوتاه، متن دقیق</td></tr>
+<tr><td class="mono">rag_min_score</td><td class="mono">0.22</td><td>RAG s11 — کف ربط، اندازه‌گیری‌شده روی همین پیکره</td></tr>
+</table>
+
+<!-- ============================================================ -->
+<h2 id="s13">۱۳. نگاشت پیاده‌سازی به اسلایدهای درس</h2>
+
+<table>
+<tr><th style="width:34%">اسلاید</th><th style="width:12%">صفحه</th><th>کجا پیاده شده</th></tr>
+
+<tr><td class="mono">3-Document Preprocessing</td><td class="mono">5, 6, 11, 14, 17, 18, 22</td><td class="mono">lexical/text.py</td></tr>
+
+<tr><td class="mono">2-Boolean IR &amp; Indexing</td><td class="mono">—</td><td class="mono">lexical/index.py (postings)</td></tr>
+
+<tr><td class="mono">7-Scoring</td><td class="mono">13, 14, 29</td><td>ماتریس دودویی &rarr; شمارشی &rarr; وزنی — مبنای نقشه‌ی حرارتی</td></tr>
+<tr><td class="mono">7-Scoring</td><td class="mono">17, 23, 24</td><td class="mono">index.log_tf, index.idf</td></tr>
+<tr><td class="mono">7-Scoring</td><td class="mono">33-37</td><td>شباهت کسینوسی — <span class="ltr">vsm.rank</span></td></tr>
+<tr><td class="mono">7-Scoring</td><td class="mono">41, 43</td><td>نمادگذاری SMART و مثال کامل lnc.ltc</td></tr>
+
+<tr><td class="mono">8-Scoring in Search System</td><td class="mono">13, 14</td><td class="mono">lexical/heap.py</td></tr>
+<tr><td class="mono">8-Scoring in Search System</td><td class="mono">18, 19</td><td class="mono">index.candidates</td></tr>
+<tr><td class="mono">8-Scoring in Search System</td><td class="mono">21, 24</td><td class="mono">index.eliminate</td></tr>
+<tr><td class="mono">8-Scoring in Search System</td><td class="mono">25, 26</td><td class="mono">index.champions</td></tr>
+
+<tr><td class="mono">11-Probabilistic IR</td><td class="mono">29, 30, 31</td><td class="mono">lexical/bm25.py</td></tr>
+<tr><td class="mono">11-Probabilistic IR</td><td class="mono">32</td><td>جمله‌ی k<sub>3</sub> برای پرس‌وجوهای بلند</td></tr>
+
+<tr><td class="mono">10-Relevance Feedback</td><td class="mono">12, 20, 21</td><td class="mono">lexical/prf.py</td></tr>
+
+<tr><td class="mono">Retrieval Augmented Generation</td><td class="mono">11</td><td>کف ربط — <span class="ltr">rag_min_score</span></td></tr>
+<tr><td class="mono">Retrieval Augmented Generation</td><td class="mono">24</td><td>بازنویسی پرس‌وجو</td></tr>
+<tr><td class="mono">Retrieval Augmented Generation</td><td class="mono">32, 33, 34</td><td>قطعه‌بندی، تعبیه‌سازی، انبار برداری</td></tr>
+<tr><td class="mono">Retrieval Augmented Generation</td><td class="mono">35, 43, 44</td><td>پرامپت مقیدسازی، شکست بازیابی، ورودی نامعتمد</td></tr>
+
+<tr><td class="mono">9- Evaluation</td><td class="mono">24-36</td><td>P@K، MAP و منحنی دقت-فراخوانی — بخش ارزیابی</td></tr>
+</table>
+
+</body>
+</html>

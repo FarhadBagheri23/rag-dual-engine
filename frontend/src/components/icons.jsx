@@ -129,6 +129,27 @@ export const History = (p) => (
   </svg>
 );
 
+// Meridian + two latitude ellipses, not a filled globe: at 16-20px a filled
+// glyph turns into a dot, and the wire globe is what every browser and search
+// product uses for "the open web", so it needs no learning.
+export const Globe = (p) => (
+  <svg viewBox="0 0 24 24" {...base} {...p}>
+    <circle cx="12" cy="12" r="9" />
+    <path d="M3 12h18" />
+    <path d="M12 3a15 15 0 0 1 0 18a15 15 0 0 1 0-18" />
+  </svg>
+);
+
+// An arrow leaving a box — the standard "opens elsewhere" mark. Paired with
+// target="_blank" so the icon and the behaviour agree.
+export const External = (p) => (
+  <svg viewBox="0 0 24 24" {...base} {...p}>
+    <path d="M14 4h6v6" />
+    <path d="m20 4-8.5 8.5" />
+    <path d="M18 14v4a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4" />
+  </svg>
+);
+
 export const Spinner = (p) => (
   <svg viewBox="0 0 24 24" {...base} {...p} className={`animate-spin ${p.className || ""}`}>
     <path d="M12 3a9 9 0 1 0 9 9" />

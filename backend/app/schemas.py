@@ -109,6 +109,10 @@ class SearchRequest(BaseModel):
     prf: bool = False  # Rocchio pseudo-relevance feedback, VSM only
     model: str | None = None  # overrides LLM_MODEL for one request, RAG only
     k: int | None = None
+    # Widen retrieval past the corpus, RAG only. Off by default: it costs an
+    # outbound request, and most questions about an uploaded corpus should be
+    # answered from that corpus.
+    web: bool = False
     # Earlier turns, oldest first. RAG only: a follow-up like "just it?" cannot
     # be embedded into anything meaningful on its own (RAG slides s24).
     history: list[Turn] = []
@@ -131,12 +135,37 @@ class SearchHit(BaseModel):
     snippet: str
     matched: list[str]
     doc_number: int | None = None  # the N in [Doc N], RAG only
+    # This document's column of the term × document weight matrix (slide
+    # 7-Scoring s29): what each query term contributed to `score`. The values
+    # sum to `score`, which is what makes the heatmap checkable rather than
+    # decorative. Empty for RAG — dense retrieval has no per-term decomposition.
+    contrib: dict[str, float] = {}
 
 
 class Citation(BaseModel):
     doc_number: int
-    chunk_id: str
+    # A web passage has no chunk in the corpus and a corpus passage has no URL,
+    # so exactly one of these is set. Which one is what tells the UI whether to
+    # render a document or an outbound link.
+    chunk_id: str | None = None
     title: str
+    url: str | None = None
+
+
+class WebSource(BaseModel):
+    """One web result that went into the prompt, cited or not.
+
+    Kept apart from `hits` because the two are not the same kind of thing: a
+    hit is a chunk of the user's own corpus with a similarity score, and this
+    is a page on the internet with an address. Merging them would mean a score
+    field that is meaningless for half the rows.
+    """
+
+    doc_number: int
+    title: str
+    url: str
+    domain: str
+    snippet: str
 
 
 class SearchResponse(BaseModel):
@@ -158,4 +187,10 @@ class SearchResponse(BaseModel):
     model: str | None = None
     note: str | None = None
     coverage: list[str] = []  # corpus topics, shown when a query is rejected
+    web: list[WebSource] = []  # web passages placed in the prompt, RAG only
     rewritten: str | None = None  # the standalone question actually retrieved for
+    # Heatmap rows: the terms actually ranked on, heaviest first. Not derivable
+    # from `hits` — a term that matched nothing appears in no column and would
+    # silently vanish, when "this term found nothing" is exactly what the reader
+    # needs to see.
+    terms: list[str] = []

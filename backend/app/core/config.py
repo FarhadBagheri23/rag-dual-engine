@@ -22,7 +22,19 @@ class Settings(BaseSettings):
     llm_base_url: str = "https://api.avalai.ir/v1"
     llm_model: str = "gpt-4o-mini"
     llm_timeout: float = 60.0
-    rag_top_k: int = 4  # chunks placed in the prompt; keep small (s43)
+    # Chunks placed in the prompt. s43 says keep the context small, and 4 was
+    # that read taken too literally: on a 16-chunk corpus it cut answer-bearing
+    # passages at rank 5. Six is still selective and costs ~4k tokens.
+    rag_top_k: int = 6
+    # ...of which at most this many may come from any one document, so a single
+    # file cannot own the whole context. See rag._diversify.
+    #
+    # Half of rag_top_k, and both neighbours were measured to be worse. At 2 the
+    # cap fires when a document genuinely *is* the answer: "what is rocchio"
+    # lost its third Relevance-Feedback passage to an unrelated file. At 6 (no
+    # cap) one document takes three of four slots and the passages that answer
+    # "why normalise document length" fall off the end.
+    rag_max_per_doc: int = 3
     # RAG slides s11: dense retrieval always returns *something*, so an
     # out-of-corpus question still gets k neighbours — "set a max similarity
     # threshold". Measured on this corpus: in-scope questions score 0.31-0.71,
@@ -77,6 +89,10 @@ class Settings(BaseSettings):
     prf_n_relevant: int = 10  # top-n assumed relevant
     prf_n_nonrelevant: int = 20  # next-m assumed nonrelevant
     prf_expansion_terms: int = 20  # s20: cap the expanded query length
+
+    # --- web search (RAG slides s21: retrieval need not be one corpus) ---
+    web_top_k: int = 4  # web passages added to the prompt alongside local ones
+    web_timeout: float = 8.0  # a slow search must not hold up the whole answer
 
     # --- embeddings (RAG slides s33) ---
     # SPEC recommends all-MiniLM-L6-v2, but that model is English-only: a

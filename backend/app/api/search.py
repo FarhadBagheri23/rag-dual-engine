@@ -21,7 +21,13 @@ router = APIRouter(
 )
 
 
-def _render(chunk: dict, doc_id: str, r: dict, query_terms: set[str]) -> dict:
+def _render(
+    chunk: dict,
+    doc_id: str,
+    r: dict,
+    query_terms: set[str],
+    contrib: dict[str, float] | None = None,
+) -> dict:
     """One hit as the UI needs it: title, snippet, highlighted terms.
 
     `doc_id` is the ranked unit and `chunk["id"]` is only where the snippet was
@@ -48,10 +54,14 @@ def _render(chunk: dict, doc_id: str, r: dict, query_terms: set[str]) -> dict:
             reverse=True,
         ),
         "doc_number": r.get("doc_number"),
+        # Per-term score breakdown — one column of the term × document weight
+        # matrix (slide 7-Scoring s29). Empty for RAG, which matches meaning
+        # rather than terms and so has no per-term decomposition to show.
+        "contrib": {t: round(v, 6) for t, v in (contrib or {}).items()},
     }
 
 
-def _enrich(hits: list[dict], query: str) -> list[dict]:
+def _enrich(hits: list[dict], query: str, contrib: dict | None = None) -> list[dict]:
     """Lexical hits — one row per *document*, per spec §3.3.2.
 
     Each row still shows a snippet, taken from whichever chunk of that document
@@ -67,7 +77,9 @@ def _enrich(hits: list[dict], query: str) -> list[dict]:
         chunk = texts.get(cid)
         if chunk is None:  # index ahead of the db; a rebuild will reconcile
             continue
-        out.append(_render(chunk, r["doc_id"], r, query_terms))
+        out.append(
+            _render(chunk, r["doc_id"], r, query_terms, (contrib or {}).get(r["doc_id"]))
+        )
     return out
 
 
@@ -107,8 +119,13 @@ def search(req: SearchRequest):
         prf=req.prf,
         model=req.model,
         history=req.history,
+        web=req.web,
     )
     took_ms = (time.perf_counter() - started) * 1000
+
+    # The query vector the engine actually ranked with — after index elimination
+    # dropped terms, and after Rocchio replaced it. Absent for RAG.
+    weights = result.get("weights") or {}
 
     return {
         "query": req.query,
@@ -120,15 +137,23 @@ def search(req: SearchRequest):
         "passes": result.get("passes", []),
         "expansion": result.get("expansion", []),
         # RAG ranks the chunks it retrieved; the lexical engines rank documents.
-        "hits": (_enrich_chunks if req.engine == "rag" else _enrich)(
-            result["hits"], req.query
+        "hits": (
+            _enrich_chunks(result["hits"], req.query)
+            if req.engine == "rag"
+            else _enrich(result["hits"], req.query, result.get("contrib"))
         ),
         "answer": result.get("answer"),
         "citations": result.get("citations", []),
         "model": result.get("model"),
         "note": result.get("note"),
         "coverage": result.get("coverage", []),
+        "web": result.get("web", []),
         "rewritten": result.get("rewritten"),
+        # Rows of the score heatmap, ordered as the engine weighted them. Sent
+        # separately from the hits because a term that matched *no* result is
+        # still a row worth drawing — an empty row is the clearest possible
+        # statement that the term found nothing.
+        "terms": sorted(weights, key=weights.get, reverse=True),
     }
 
 
@@ -153,7 +178,11 @@ def search_stream(req: SearchRequest):
         started = time.perf_counter()
         try:
             for event in rag.stream(
-                req.query, k=req.k, model=req.model, history=req.history
+                req.query,
+                k=req.k,
+                model=req.model,
+                history=req.history,
+                web=req.web,
             ):
                 if "stage" in event and "hits" in event:
                     event = {**event, "hits": _enrich_chunks(event["hits"], req.query)}

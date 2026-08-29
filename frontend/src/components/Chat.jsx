@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import * as api from "../api";
-import { Alert, Check, Doc, Send, Sparkle, Spinner } from "./icons";
+import { Alert, Check, Doc, External, Globe, Send, Sparkle, Spinner } from "./icons";
 
 /** What each backend stage is called in the UI. The names are the pipeline's
  *  real steps — rag.stream emits one before each, so nothing here is on a
@@ -9,6 +9,7 @@ const STAGES = {
   rewriting: "Working out what you mean",
   embedding: "Embedding the question",
   retrieving: "Searching the vector index",
+  browsing: "Searching the web",
   reading: "Reading the passages",
   writing: "Writing the answer",
 };
@@ -100,26 +101,100 @@ function Stages({ stages, elapsed, collapsed }) {
   );
 }
 
-function Sources({ citations, hits }) {
+function Sources({ citations, hits, web = [] }) {
   const cited = new Set(citations.map((c) => c.doc_number));
   return (
     <div className="mt-3 border-t border-line pt-3">
       {citations.length > 0 && (
         <div className="flex flex-wrap gap-2">
-          {citations.map((c) => (
-            <span
-              key={c.doc_number}
-              className="inline-flex items-center gap-1.5 rounded-md border border-accent/40 bg-accent/10 px-2 py-1 text-xs"
-            >
-              <Doc className="h-3.5 w-3.5 shrink-0 text-accent" />
-              <span className="font-mono text-accent">[Doc {c.doc_number}]</span>
-              <span dir="auto">{c.title}</span>
-            </span>
-          ))}
+          {citations.map((c) =>
+            // A cited web passage becomes a link; a cited corpus passage stays
+            // a label, because there is nowhere to send the reader. Same chip,
+            // two elements — the shape carries "this is a source" and the icon
+            // carries which kind.
+            c.url ? (
+              <a
+                key={c.doc_number}
+                href={c.url}
+                target="_blank"
+                rel="noopener noreferrer"
+                title={c.title}
+                className="inline-flex max-w-xs items-center gap-1.5 rounded-md border border-accent/40 bg-accent/10 px-2 py-1 text-xs transition-colors duration-150 hover:border-accent hover:bg-accent/20"
+              >
+                <Globe className="h-3.5 w-3.5 shrink-0 text-accent" />
+                <span className="font-mono text-accent">
+                  [Doc {c.doc_number}]
+                </span>
+                <span dir="auto" className="truncate">
+                  {c.title}
+                </span>
+                <External className="h-3 w-3 shrink-0 text-dim" />
+              </a>
+            ) : (
+              <span
+                key={c.doc_number}
+                className="inline-flex items-center gap-1.5 rounded-md border border-accent/40 bg-accent/10 px-2 py-1 text-xs"
+              >
+                <Doc className="h-3.5 w-3.5 shrink-0 text-accent" />
+                <span className="font-mono text-accent">
+                  [Doc {c.doc_number}]
+                </span>
+                <span dir="auto">{c.title}</span>
+              </span>
+            )
+          )}
+        </div>
+      )}
+
+      {/* Every page that went into the prompt, cited or not. Shown because
+          "what did it read" and "what did it use" are different questions, and
+          a reader checking for bias needs the first one. */}
+      {web.length > 0 && (
+        <div className={citations.length ? "mt-3" : ""}>
+          <div className="mb-1.5 flex items-center gap-1.5 text-xs uppercase tracking-wide text-dim">
+            <Globe className="h-3.5 w-3.5" />
+            From the web ({web.length})
+          </div>
+          <ul className="grid gap-1.5 sm:grid-cols-2">
+            {web.map((w) => (
+              <li key={w.doc_number}>
+                <a
+                  href={w.url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className={`group flex h-full flex-col gap-1 rounded-md border px-2.5 py-2 transition-colors duration-150 hover:border-edge ${
+                    cited.has(w.doc_number)
+                      ? "border-accent/30 bg-accent/5"
+                      : "border-line bg-muted/30"
+                  }`}
+                >
+                  <span className="flex items-center gap-1.5 text-xs">
+                    <span
+                      className={`font-mono ${
+                        cited.has(w.doc_number) ? "text-accent" : "text-dim"
+                      }`}
+                    >
+                      [Doc {w.doc_number}]
+                    </span>
+                    {/* The domain, not the full URL — it is the part a reader
+                        actually judges a source by, and it always fits. */}
+                    <span className="truncate text-dim">{w.domain}</span>
+                    <External className="ml-auto h-3 w-3 shrink-0 text-dim opacity-0 transition-opacity duration-150 group-hover:opacity-100" />
+                  </span>
+                  <span
+                    dir="auto"
+                    className="line-clamp-2 text-sm leading-snug group-hover:text-fg"
+                  >
+                    {w.title}
+                  </span>
+                </a>
+              </li>
+            ))}
+          </ul>
         </div>
       )}
       {hits.length > 0 && (
-        <details className={citations.length ? "mt-3" : ""}>
+        <details className={citations.length || web.length ? "mt-3" : ""}>
           <summary className="cursor-pointer text-xs uppercase tracking-wide text-dim hover:text-fg">
             Retrieved passages ({hits.length})
           </summary>
@@ -219,9 +294,16 @@ function Bubble({ msg }) {
           </p>
         )}
 
-        {msg.done && (msg.citations.length > 0 || msg.hits.length > 0) && (
-          <Sources citations={msg.citations} hits={msg.hits} />
-        )}
+        {msg.done &&
+          (msg.citations.length > 0 ||
+            msg.hits.length > 0 ||
+            (msg.web?.length ?? 0) > 0) && (
+            <Sources
+              citations={msg.citations}
+              hits={msg.hits}
+              web={msg.web ?? []}
+            />
+          )}
 
         {msg.done && msg.model && (
           <div className="mt-2 text-right font-mono text-[0.7rem] text-dim">
@@ -246,6 +328,7 @@ function restore(stored) {
     text: stored.content,
     stages: [],
     hits: meta.hits ?? [],
+    web: meta.web ?? [],
     citations: meta.citations ?? [],
     model: meta.model,
     took_ms: meta.took_ms,
@@ -266,6 +349,7 @@ function store(msg) {
     meta: {
       citations: msg.citations ?? [],
       hits: msg.hits ?? [],
+      web: msg.web ?? [],
       model: msg.model,
       took_ms: msg.took_ms,
       note: msg.note,
@@ -280,6 +364,10 @@ export default function Chat({ model, corpusSize, conversation, onSaved }) {
   );
   const [draft, setDraft] = useState("");
   const [busy, setBusy] = useState(false);
+  // Sticky for the thread, not per-message: someone who turns web search on is
+  // usually asking a run of questions the corpus cannot answer, and making them
+  // re-arm it every turn would be the wrong default.
+  const [web, setWeb] = useState(false);
   const pinned = useRef(true); // only autoscroll if the user hasn't scrolled up
   const box = useRef(null);
   // The thread this chat is appending to. A ref, not state: it changes as a
@@ -321,6 +409,7 @@ export default function Chat({ model, corpusSize, conversation, onSaved }) {
       text: "",
       stages: [],
       hits: [],
+      web: [],
       citations: [],
       done: false,
       elapsed: 0,
@@ -351,7 +440,7 @@ export default function Chat({ model, corpusSize, conversation, onSaved }) {
       });
 
     try {
-      for await (const event of api.searchStream({ query: q, model, history })) {
+      for await (const event of api.searchStream({ query: q, model, history, web })) {
         if (event.rewritten) {
           // Attach to the stage that produced it, rather than adding a row.
           patch((r) => ({
@@ -360,6 +449,11 @@ export default function Chat({ model, corpusSize, conversation, onSaved }) {
               i === r.stages.length - 1 ? { ...s, query: event.rewritten } : s
             ),
           }));
+        } else if (event.web) {
+          // Arrives before generation starts, like the `reading` hits do —
+          // showing the pages while the model is still writing is the whole
+          // reason the pipeline emits them separately.
+          patch((r) => ({ ...r, web: event.web }));
         } else if (event.stage) {
           patch((r) => {
             const stages = r.stages.map((s) => ({ ...s, done: true }));
@@ -485,23 +579,64 @@ export default function Chat({ model, corpusSize, conversation, onSaved }) {
         >
           {busy ? <Spinner className="h-5 w-5" /> : <Send className="h-5 w-5" />}
         </button>
-        <textarea
-          id="ask"
-          ref={box}
-          dir="auto"
-          rows={1}
-          value={draft}
-          onChange={(e) => setDraft(e.target.value)}
-          onKeyDown={(e) => {
-            // Enter sends, Shift+Enter breaks the line — the chat convention.
-            if (e.key === "Enter" && !e.shiftKey) {
-              e.preventDefault();
-              send();
-            }
-          }}
-          placeholder="Ask a question…"
-          className="max-h-40 flex-1 resize-none rounded-2xl border border-line bg-card px-4 py-3 leading-relaxed placeholder:text-dim"
-        />
+        {/* The textarea and the toggle share one rounded shell, so the control
+            reads as part of the input rather than as a button parked beside
+            it. The shell carries the focus ring for the field inside it. */}
+        <div className="flex-1 rounded-2xl border border-line bg-card focus-within:ring-2 focus-within:ring-accent focus-within:ring-offset-2 focus-within:ring-offset-bg">
+          <textarea
+            id="ask"
+            ref={box}
+            dir="auto"
+            rows={1}
+            value={draft}
+            onChange={(e) => setDraft(e.target.value)}
+            onKeyDown={(e) => {
+              // Enter sends, Shift+Enter breaks the line — the chat convention.
+              if (e.key === "Enter" && !e.shiftKey) {
+                e.preventDefault();
+                send();
+              }
+            }}
+            placeholder="Ask a question…"
+            className="max-h-40 w-full resize-none bg-transparent px-4 pb-1 pt-3 leading-relaxed placeholder:text-dim focus:outline-none"
+          />
+          <div className="flex items-center gap-2 px-2 pb-2">
+            {/* aria-pressed, not a checkbox: this is a toggle button, and the
+                pressed state is what a screen reader should announce. The label
+                is real text next to the icon — an icon-only control makes the
+                reader guess whether it is armed. */}
+            <button
+              type="button"
+              onClick={() => setWeb((v) => !v)}
+              aria-pressed={web}
+              title={
+                web
+                  ? "Web search is on — answers may cite pages from the internet"
+                  : "Search the web as well as your corpus"
+              }
+              className={`inline-flex cursor-pointer items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs transition-colors duration-150 ${
+                web
+                  ? "border-accent bg-accent/15 text-accent"
+                  : "border-line text-dim hover:border-edge hover:text-fg"
+              }`}
+            >
+              <Globe className="h-3.5 w-3.5" />
+              Search the web
+              {/* A dot, so the state does not rest on colour alone. */}
+              {web && (
+                <span
+                  aria-hidden="true"
+                  className="h-1.5 w-1.5 rounded-full bg-accent"
+                />
+              )}
+            </button>
+            {web && (
+              <span className="text-xs text-dim">
+                answers may cite pages outside your corpus
+              </span>
+            )}
+          </div>
+        </div>
       </form>
     </div>
   );

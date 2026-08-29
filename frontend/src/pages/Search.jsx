@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import * as api from "../api";
 import Chat from "../components/Chat";
+import Compare from "../components/Compare";
+import Heatmap from "../components/Heatmap";
 import SearchControls from "../components/SearchControls";
 import { ResultCard } from "../components/Results";
 import { Alert, Search as SearchIcon, Spinner } from "../components/icons";
@@ -28,6 +30,10 @@ export default function SearchView({
   const [result, setResult] = useState(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState(null);
+  // Opt-in: comparing costs a second retrieval, and most searches are just
+  // searches. Closed again on every new query, so it never shows one query's
+  // comparison under another query's results.
+  const [comparing, setComparing] = useState(false);
   const inputRef = useRef(null);
 
   const rag = opts.engine === "rag";
@@ -42,6 +48,7 @@ export default function SearchView({
       if (!q.trim()) return;
       setBusy(true);
       setError(null);
+      setComparing(false);
       try {
         const res = await api.search({
           query: q,
@@ -250,13 +257,48 @@ export default function SearchView({
                 )}
 
                 {result.hits.length > 0 ? (
-                  <ul className="space-y-3">
-                    {/* Keyed by document — VSM and BM25 rank documents, so a
-                        doc_id appears at most once in this list. */}
-                    {result.hits.map((h, i) => (
-                      <ResultCard key={h.doc_id} hit={h} rank={i + 1} />
-                    ))}
-                  </ul>
+                  <>
+                    <ul className="space-y-3">
+                      {/* Keyed by document — VSM and BM25 rank documents, so a
+                          doc_id appears at most once in this list. */}
+                      {result.hits.map((h, i) => (
+                        <ResultCard key={h.doc_id} hit={h} rank={i + 1} />
+                      ))}
+                    </ul>
+
+                    {/* The ranked list says which documents won; the matrix
+                        says which term won them. Column i belongs to result i
+                        above, and the two are read together. */}
+                    <div className="mt-5">
+                      <Heatmap
+                        engine={result.engine}
+                        terms={result.terms}
+                        hits={result.hits}
+                      />
+                    </div>
+
+                    {!comparing && (
+                      <button
+                        onClick={() => setComparing(true)}
+                        className="mt-4 w-full cursor-pointer rounded-lg border border-dashed border-line py-3 text-sm text-dim transition-colors duration-150 hover:border-edge hover:text-fg"
+                      >
+                        Run this query on{" "}
+                        <span className="font-medium">
+                          {result.engine === "vsm" ? "BM25" : "VSM"}
+                        </span>{" "}
+                        too and compare
+                      </button>
+                    )}
+
+                    {comparing && (
+                      <Compare
+                        query={result.query}
+                        mode={result.mode}
+                        docCount={docCount}
+                        onClose={() => setComparing(false)}
+                      />
+                    )}
+                  </>
                 ) : (
                   <div className="card p-8 text-center">
                     <p className="font-medium">

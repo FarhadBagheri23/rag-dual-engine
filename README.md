@@ -259,25 +259,24 @@ ranked rows and a summed tf.
 
 ### Weighting
 
-Scoring is **lnc.ltc**, which slide 7-Scoring s41 calls "a very standard
-weighting scheme" and s43 works through end to end — documents get log tf, no
-idf, cosine normalization; queries get log tf, idf, cosine normalization.
-`tests/test_lexical.py` reproduces s43's worked example. Top-K selection uses a
-binary min-heap, O(N log K) rather than sorting all N (slide 8-Scoring s13–14).
+Scoring is **lnc.ltc**, a very standard weighting scheme — documents get log
+tf, no idf, cosine normalization; queries get log tf, idf, cosine
+normalization. `tests/test_lexical.py` reproduces the worked example. Top-K selection uses a
+binary min-heap, O(N log K) rather than sorting all N.
 
 One detail worth stating outright, because it differs from a naive reading:
 **documents carry no idf** — that is the `n` in `lnc`. idf measures a term's
 rarity across the collection, which is a property of the term and not of any one
 document, so weighting both sides by it squares the effect. Putting idf on the
-query side only is what lnc.ltc means and what s43 computes.
+query side only is what lnc.ltc means.
 
-Three retrieval modes, two of them inexact top-K (slide 8-Scoring s19):
+Three retrieval modes, two of them inexact top-K:
 
 | `mode` | Contender set A | Safe? |
 |---|---|---|
 | `exact` | every document containing a query term | yes |
-| `champion` | champion lists — the `r` highest-tf documents per term (s26) | no |
-| `elimination` | all postings, but only for high-idf query terms (s24) | no |
+| `champion` | champion lists — the `r` highest-tf documents per term | no |
+| `elimination` | all postings, but only for high-idf query terms | no |
 
 `scored` in the response is how many documents were actually scored, so the
 saving from an inexact mode is visible per query rather than merely claimed.
@@ -287,18 +286,18 @@ carries `passes`, the per-retrieval split, and the UI renders "6 + 7 of 9"
 rather than an arithmetically impossible "13 of 9".
 All three modes work with both lexical engines, with two honest caveats:
 
-- **`elimination` scores are not comparable to `exact` scores.** s24 says to
+- **`elimination` scores are not comparable to `exact` scores.** The method is to
   "only accumulate scores from catcher and rye", so the dropped terms'
   contributions are omitted rather than renormalized away — the score is a
   genuine partial cosine, and it is systematically lower. The ranking is the
   point; the magnitude is not comparable across modes, and the UI says so.
-- **`champion` is a looser approximation under BM25 than under VSM.** s26
+- **`champion` is a looser approximation under BM25 than under VSM.** Champion lists
   scopes champion lists to tf-idf, where score rises monotonically with tf.
   BM25 also divides by document length, so a high-tf long document can rank
   below a low-tf short one the tf-ordered list omitted. Both modes are non-safe
-  by construction (s16); this combination is simply less tight.
+  by construction; this combination is simply less tight.
 
-**BM25** (slide 11-Probabilistic s31–32) adds probabilistic weighting with
+**BM25** adds probabilistic weighting with
 tunable `k1` (term frequency saturation), `b` (length normalization) and `k3`
 (query-side saturation). `b` and `avgdl` are measured over documents, for the
 reason given above. The two models disagree in an instructive way: cosine
@@ -306,7 +305,7 @@ normalization punishes a long document harder than BM25's `b=0.75`, so the
 same query can rank a different document first under each — which is why the
 spec asks for both.
 
-**Pseudo-relevance feedback** (slide 10) runs Rocchio on the assumption that
+**Pseudo-relevance feedback** runs Rocchio on the assumption that
 the top **documents** of an initial retrieval are relevant, as §3.2.1 words it.
 Building the centroid from chunks instead would let one long document
 contribute several times over, weighting the expansion by how the corpus
@@ -315,7 +314,7 @@ happened to be split:
     q_m = α·q_0 + β·centroid(top n) − γ·centroid(next m)
 
 with α=1.0, β=0.75, γ=0.15, negative weights clipped, and the expansion capped
-at the heaviest 20 terms because long queries are expensive (s20). Original
+at the heaviest 20 terms because long queries are expensive. Original
 query terms are never capped away. The response returns the added terms in
 `expansion`, so the effect is inspectable rather than invisible. PRF is
 available on VSM only — Rocchio is defined on the vector space model — and the
@@ -335,7 +334,7 @@ goes into the prompt, and a citation has to point at the sentence a claim came
 from rather than at a whole PDF. So one document legitimately supplies several
 `[Doc N]` entries — the opposite of what the lexical list must do.
 
-Retrieved text is treated as untrusted input (RAG slides s44): the passages are
+Retrieved text is treated as untrusted input: the passages are
 fenced in the prompt and the instructions state they are reference material,
 never commands. A document in the corpus cannot instruct the model.
 

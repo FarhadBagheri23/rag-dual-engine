@@ -86,7 +86,7 @@ def search(q0: dict[str, float], k: int, mode: str) -> dict:
     """Retrieve, expand, retrieve again."""
     first = rank(q0, settings.prf_n_relevant + settings.prf_n_nonrelevant, mode)
     if not first["hits"]:
-        return {"hits": [], "scored": first["scored"], "expansion": []}
+        return {"hits": [], "scored": first["scored"], "expansion": [], "contrib": {}}
 
     qm = expand(q0, first["hits"])
     second = rank(qm, k, mode)
@@ -94,6 +94,10 @@ def search(q0: dict[str, float], k: int, mode: str) -> dict:
     added = sorted(set(qm) - set(q0), key=qm.get, reverse=True)
     return {
         "hits": second["hits"],
+        # The second pass is the one on screen, so its breakdown is the one the
+        # heatmap must show — rows include the terms Rocchio added.
+        "contrib": second["contrib"],
+        "weights": second["weights"],
         # Total scoring work, summed over both retrievals — which can exceed the
         # collection size, because a document scored in both passes is scored
         # twice. `passes` carries the split so the UI can say "6 + 7 of 9"

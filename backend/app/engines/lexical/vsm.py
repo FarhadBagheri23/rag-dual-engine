@@ -62,7 +62,7 @@ def search(
     if mode == "elimination":
         weights = index.eliminate(weights)
     if not weights:
-        return {"hits": [], "scored": 0}
+        return {"hits": [], "scored": 0, "contrib": {}, "weights": {}}
 
     k = k or settings.top_k
     if prf:
@@ -70,6 +70,43 @@ def search(
 
         return prf_module.search(weights, k, mode)
     return rank(weights, k, mode)
+
+
+def term_score(wq: float, tf: int, norm: float) -> float:
+    """One term's contribution to one document's cosine score.
+
+    The single definition of a cell in the score matrix: the ranking loop sums
+    these, and `explain` reports them individually. Two copies of this
+    expression would be two things to keep in step, and the heatmap's whole
+    claim is that its columns add up to the score already on screen.
+
+    ponytail: a call per (document, term) rather than the expression inlined.
+    Inline it if a profile ever shows the call dominating; at this corpus size
+    the scoring loop is microseconds either way.
+    """
+    return wq * (log_tf(tf) / norm)
+
+
+def explain(weights: dict[str, float], doc_ids: list[str]) -> dict[str, dict[str, float]]:
+    """Per-term score breakdown for already-ranked documents.
+
+    Run *after* top-K, over the k survivors only — |q|·k multiplications rather
+    than |q|·N. Threading a dict through TopKMinHeap would instead build one per
+    candidate and throw away all but k of them, which is exactly the work the
+    heap exists to avoid (slide 8-Scoring s13).
+    """
+    out = {}
+    for doc_id in doc_ids:
+        forward = index.doc_forward.get(doc_id)
+        if forward is None:
+            continue
+        norm = index.doc_norm[doc_id]
+        out[doc_id] = {
+            t: term_score(wq, forward[t], norm)
+            for t, wq in weights.items()
+            if t in forward
+        }
+    return out
 
 
 def rank(weights: dict[str, float], k: int, mode: str = "exact") -> dict:
@@ -86,9 +123,22 @@ def rank(weights: dict[str, float], k: int, mode: str = "exact") -> dict:
             continue
         norm = index.doc_norm[doc_id]
         score = sum(
-            wq * (log_tf(forward[t]) / norm) for t, wq in weights.items() if t in forward
+            term_score(wq, forward[t], norm)
+            for t, wq in weights.items()
+            if t in forward
         )
         if score > 0:  # straight into the heap — materializing all N scores
             heap.push(score, doc_id)  # first would defeat the point of O(N log K)
 
-    return {"hits": heap.hits(set(weights)), "scored": len(candidates)}
+    hits = heap.hits(set(weights))
+    return {
+        "hits": hits,
+        "scored": len(candidates),
+        # Keyed by document rather than attached to each hit: Rocchio ranks
+        # twice and only the second breakdown describes the list being shown.
+        "contrib": explain(weights, [h["doc_id"] for h in hits]),
+        # The query vector that actually produced this ranking — after
+        # elimination, and after Rocchio replaced it. The heatmap's rows are
+        # these terms, not whatever the user typed.
+        "weights": dict(weights),
+    }

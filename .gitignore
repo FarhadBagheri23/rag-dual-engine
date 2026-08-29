@@ -17,3 +17,6 @@ frontend/dist/
 .vscode/
 .idea/
 .DS_Store
+
+# editor/tooling
+.claude/
