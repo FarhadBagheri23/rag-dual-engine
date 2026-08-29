@@ -1,15 +1,28 @@
-"""Vector Space Model, lnc.ltc — slides 7-Scoring and 8-Scoring.
+"""Vector Space Model, lnc.ltc — slides 7-Scoring s41/s43 and 8-Scoring.
 
     documents  lnc : log tf, no idf, cosine normalized   (precomputed at index time)
     queries    ltc : log tf, idf,    cosine normalized
+
+s41 names lnc.ltc "a very standard weighting scheme" and s43 works it through
+end to end; this module reproduces that example exactly. Note the document side
+carries *no* idf — that is the `n` in lnc, and it is deliberate: idf describes a
+term's rarity in the collection, a property of the term rather than of any one
+document, so applying it on both sides would square it.
+
+The scored unit is the **document**, per spec §3.3.2 ("a ranked list of relevant
+documents") and §3.2.1 ("TF-IDF weighting for queries and documents"). A
+document's tf for a term is its total across that document's chunks, and its
+`c` normalization is over the whole document — so a long document pays the
+length penalty the model intends, rather than being split into several short
+ones that each escape it and then compete with each other for result slots.
 
 Scoring visits only the postings of query terms, so cost is proportional to
 those postings rather than to the collection (slide 8-Scoring s5).
 
 Three retrieval modes, the last two being inexact top-K (slide 8-Scoring s19):
 
-    exact        every chunk containing at least one query term — safe ranking
-    champion     only the champion lists, r highest-tf chunks per term (s26)
+    exact        every document containing at least one query term — safe
+    champion     only the champion lists, r highest-tf documents per term (s26)
     elimination  only query terms above an idf floor, all their postings (s24)
 """
 
@@ -19,8 +32,6 @@ from app.core.config import settings
 from app.engines.lexical.heap import TopKMinHeap
 from app.engines.lexical.index import index, log_tf
 from app.engines.lexical.text import tokenize
-
-MODES = ("exact", "champion", "elimination")
 
 
 def query_vector(query: str) -> dict[str, float]:
@@ -35,37 +46,21 @@ def query_vector(query: str) -> dict[str, float]:
     return {t: w / norm for t, w in weights.items()}
 
 
-def _eliminate(weights: dict[str, float]) -> dict[str, float]:
-    """Index elimination: keep only high-idf query terms — slide 8-Scoring s24.
-
-    "catcher in the rye" scores from catcher and rye only. The floor is a
-    fraction of the highest idf in the query, so it adapts to the query rather
-    than to a fixed corpus-wide constant, and a query of uniformly common
-    terms keeps all of them instead of eliminating itself to nothing.
-    """
-    if len(weights) < 2:
-        return weights
-    idfs = {t: index.idf(t) for t in weights}
-    floor = settings.elimination_ratio * max(idfs.values())
-    kept = {t: w for t, w in weights.items() if idfs[t] >= floor}
-    return kept or weights
-
-
 def search(
     query: str, k: int | None = None, mode: str = "champion", prf: bool = False, **_
 ) -> dict:
-    """Ranked chunks for `query`.
+    """Ranked documents for `query`.
 
     Every engine returns this shape: {"hits": [...], "scored": int}. `scored`
     is the size of the candidate set actually visited — for the inexact modes
     it is well below the collection size, which is the saving being claimed.
-    """
-    if mode not in MODES:
-        raise ValueError(f"mode must be one of {MODES}, got {mode!r}")
 
+    `mode` is validated by SearchRequest's Literal at the API boundary, so it
+    is trusted here rather than re-checked.
+    """
     weights = query_vector(query)
     if mode == "elimination":
-        weights = _eliminate(weights)
+        weights = index.eliminate(weights)
     if not weights:
         return {"hits": [], "scored": 0}
 
@@ -78,30 +73,22 @@ def search(
 
 
 def rank(weights: dict[str, float], k: int, mode: str = "exact") -> dict:
-    """Cosine-score a query vector against the candidate set and select top-K.
+    """Cosine-score a query vector against the candidate documents, top-K.
 
     Split out from `search` because pseudo-relevance feedback (phase 3) ranks a
     modified vector that never came from a query string.
     """
     candidates = index.candidates(weights, mode)
-    scores: dict[str, float] = {}
-    for cid in candidates:
-        forward = index.forward.get(cid)
+    heap = TopKMinHeap(k)
+    for doc_id in candidates:
+        forward = index.doc_forward.get(doc_id)
         if forward is None:
             continue
-        norm = index.norm[cid]
-        scores[cid] = sum(
+        norm = index.doc_norm[doc_id]
+        score = sum(
             wq * (log_tf(forward[t]) / norm) for t, wq in weights.items() if t in forward
         )
+        if score > 0:  # straight into the heap — materializing all N scores
+            heap.push(score, doc_id)  # first would defeat the point of O(N log K)
 
-    heap = TopKMinHeap(k)
-    for cid, score in scores.items():
-        if score > 0:
-            heap.push(score, cid)
-
-    matched = set(weights)
-    hits = [
-        {"chunk_id": cid, "score": score, "matched": matched}
-        for score, cid in heap.ranked()
-    ]
-    return {"hits": hits, "scored": len(candidates)}
+    return {"hits": heap.hits(set(weights)), "scored": len(candidates)}

@@ -19,18 +19,18 @@ SUPPORTED = {".pdf", ".docx"}
 
 
 def _parse_pdf(path: Path) -> tuple[str, str]:
-    """Returns (text, title). Title falls back to the filename stem."""
+    """Returns (text, embedded title). The title is "" when the file carries no
+    metadata title — naming the document is the caller's job, not this one's."""
     with pymupdf.open(path) as doc:
         text = "\n\n".join(page.get_text() for page in doc)
         title = (doc.metadata or {}).get("title") or ""
-    return text, title.strip() or path.stem
+    return text, title.strip()
 
 
 def _parse_docx(path: Path) -> tuple[str, str]:
     doc = DocxDocument(path)
     text = "\n\n".join(p.text for p in doc.paragraphs if p.text.strip())
-    title = (doc.core_properties.title or "").strip()
-    return text, title or path.stem
+    return text, (doc.core_properties.title or "").strip()
 
 
 PARSERS = {".pdf": _parse_pdf, ".docx": _parse_docx}
@@ -43,15 +43,23 @@ _splitter = RecursiveCharacterTextSplitter(
 )
 
 
-def parse(path: Path) -> tuple[str, str]:
+def parse(path: Path, filename: str) -> tuple[str, str]:
+    """Extract text and a display title.
+
+    `path` is where the bytes currently sit — a temp file during upload — and
+    `filename` is what the user called the document. Keeping them separate is
+    the whole point: falling back to `path.stem` is how a document ends up
+    titled `tmpoqta_c1i`. Both the title fallback and the error message below
+    use `filename`, the only one of the two a person ever chose.
+    """
     suffix = path.suffix.lower()
     if suffix not in PARSERS:
         raise UnsupportedFileType(suffix, SUPPORTED)
     text, title = PARSERS[suffix](path)
     text = re.sub(r"[ \t]+", " ", text).strip()  # collapse the whitespace PDFs emit
     if not text:
-        raise EmptyDocument(path.name)
-    return text, title
+        raise EmptyDocument(filename)
+    return text, title or Path(filename).stem
 
 
 def chunk(text: str, doc_id: str) -> list[dict]:

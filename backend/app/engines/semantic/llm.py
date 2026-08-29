@@ -35,13 +35,25 @@ def available_models() -> list[str]:
         return []
 
 
-def complete(prompt: str, model: str | None = None) -> str:
+def stream(prompt: str, model: str | None = None):
+    """Yield the answer in pieces, as the provider produces them.
+
+    Generation is the slow half of RAG — tens of seconds against a hosted
+    model — so the pieces go to the browser as they arrive rather than after
+    the last one. `complete` below is this function drained, so there is one
+    request path and one place where provider errors are translated.
+    """
     try:
         response = client().chat.completions.create(
             model=model or settings.llm_model,
             messages=[{"role": "user", "content": prompt}],
             temperature=0,  # grounded answers should not be creative
+            stream=True,
         )
+        for chunk in response:
+            piece = chunk.choices[0].delta.content if chunk.choices else None
+            if piece:
+                yield piece
     except APIStatusError as exc:
         # The provider's own message is the useful part — a restricted key or
         # an unknown model says exactly what to do. Pass it through.
@@ -54,4 +66,6 @@ def complete(prompt: str, model: str | None = None) -> str:
     except APIError as exc:  # network, timeout, malformed response
         raise ProviderError(None, str(exc)) from None
 
-    return response.choices[0].message.content or ""
+
+def complete(prompt: str, model: str | None = None) -> str:
+    return "".join(stream(prompt, model))

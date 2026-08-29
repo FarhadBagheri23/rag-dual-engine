@@ -1,7 +1,78 @@
 from datetime import datetime
-from typing import Literal
+from typing import Any, Literal
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
+
+from app.core.security import MAX_PASSWORD_BYTES
+
+
+class Credentials(BaseModel):
+    """Login and registration take the same pair.
+
+    ponytail: a pattern, not pydantic's EmailStr — that pulls in the
+    email-validator package to RFC-check an address nothing is ever sent to.
+    Here an email is a login identifier, so the only useful check is that it
+    looks like one and the user has not fat-fingered it.
+
+    The password ceiling is real, though: bcrypt hashes at most 72 bytes and
+    raises above that, so bounding it here turns a 500 into a 422 that names
+    the limit.
+    """
+
+    email: str = Field(
+        min_length=5, max_length=254, pattern=r"^[^@\s]+@[^@\s]+\.[^@\s]+$"
+    )
+    password: str = Field(min_length=8, max_length=MAX_PASSWORD_BYTES)
+
+
+class UserOut(BaseModel):
+    """Never contains password_hash. That column leaves the database layer
+    only on the login path, and never leaves the process."""
+
+    id: str
+    email: str
+    role: Literal["client", "admin"]
+    created_at: datetime
+
+
+class TokenPair(BaseModel):
+    access_token: str  # 30 minutes
+    refresh_token: str  # 7 days
+    token_type: str = "bearer"
+    user: UserOut
+
+
+class RefreshRequest(BaseModel):
+    refresh_token: str
+
+
+class ConversationMessage(BaseModel):
+    role: Literal["user", "assistant"]
+    content: str
+    # Free-form per-turn render state: citations and hits for RAG, mode and prf
+    # for the lexical engines. Opaque to the backend, which only stores it.
+    meta: dict[str, Any] | None = None
+
+
+class ConversationOut(BaseModel):
+    """A sidebar row. `engine` is what renders the VSM / BM25 / RAG tag."""
+
+    id: str
+    engine: Literal["vsm", "bm25", "rag"]
+    title: str
+    n_messages: int = 0
+    created_at: datetime
+    updated_at: datetime
+
+
+class ConversationDetail(ConversationOut):
+    messages: list[ConversationMessage] = []
+
+
+class ConversationSave(BaseModel):
+    id: str | None = None  # absent or unknown starts a new thread
+    engine: Literal["vsm", "bm25", "rag"]
+    messages: list[ConversationMessage]
 
 
 class DocumentOut(BaseModel):
@@ -14,13 +85,6 @@ class DocumentOut(BaseModel):
     added_at: datetime
 
 
-class ChunkOut(BaseModel):
-    id: str
-    doc_id: str
-    ordinal: int
-    text: str
-
-
 class DeleteResult(BaseModel):
     """What deletion actually removed — the UI shows this, and it is the
     evidence that both indexes were cleaned (rubric: Index Synchronization)."""
@@ -31,6 +95,13 @@ class DeleteResult(BaseModel):
     vectors_removed: int = 0  # phase 4
 
 
+class Turn(BaseModel):
+    """One prior message in the conversation, for RAG query rewriting."""
+
+    role: Literal["user", "assistant"]
+    content: str
+
+
 class SearchRequest(BaseModel):
     query: str
     engine: Literal["vsm", "bm25", "rag"] = "vsm"
@@ -38,13 +109,24 @@ class SearchRequest(BaseModel):
     prf: bool = False  # Rocchio pseudo-relevance feedback, VSM only
     model: str | None = None  # overrides LLM_MODEL for one request, RAG only
     k: int | None = None
+    # Earlier turns, oldest first. RAG only: a follow-up like "just it?" cannot
+    # be embedded into anything meaningful on its own (RAG slides s24).
+    history: list[Turn] = []
 
 
 class SearchHit(BaseModel):
-    chunk_id: str
+    """One row of a ranked list.
+
+    `doc_id` is the ranked unit for VSM and BM25 — the score belongs to the
+    document (spec §3.3.2), and a document appears at most once. `chunk_id` says
+    only which chunk the snippet was taken from. For RAG the two are inverted in
+    importance: the chunk is what was retrieved and cited, and `doc_id` is just
+    the file it came out of.
+    """
+
     doc_id: str
+    chunk_id: str  # the snippet's source, not the ranked unit
     title: str
-    ordinal: int
     score: float
     snippet: str
     matched: list[str]
@@ -63,7 +145,11 @@ class SearchResponse(BaseModel):
     mode: str
     prf: bool = False
     took_ms: float
-    scored: int  # size of the candidate set — shows what inexact top-K skipped
+    scored: int  # documents actually scored — shows what inexact top-K skipped
+    # Per-retrieval breakdown of `scored`. Empty for a single pass; two entries
+    # when Rocchio ran, because it retrieves twice and the total can then exceed
+    # the collection size.
+    passes: list[int] = []
     expansion: list[str] = []  # terms Rocchio added, so the effect is visible
     hits: list[SearchHit]
     # RAG only
@@ -72,3 +158,4 @@ class SearchResponse(BaseModel):
     model: str | None = None
     note: str | None = None
     coverage: list[str] = []  # corpus topics, shown when a query is rejected
+    rewritten: str | None = None  # the standalone question actually retrieved for

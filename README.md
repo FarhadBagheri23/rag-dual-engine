@@ -11,26 +11,37 @@ Modern Information Retrieval — Sharif University of Technology, International 
 ## Architecture
 
 ```
-                 ┌─────────────────────── React (Vite + Tailwind) ──────────────────────┐
-                 │   Admin: upload · corpus table · delete    Search: query · engine ·   │
-                 │                                            PRF toggle · results       │
-                 └───────────────────────────────┬──────────────────────────────────────┘
-                                                 │  /api
-                 ┌───────────────────────────────▼──────────────────────────────────────┐
-                 │                          FastAPI                                      │
-                 │   api/documents.py            api/search.py                           │
-                 └───────┬───────────────────────────────────┬──────────────────────────┘
-                         │ write                             │ read
-                 ┌───────▼────────┐              ┌───────────▼───────────┐
-                 │   corpus.py    │              │   lexical/  semantic/ │
-                 │  SINGLE WRITER │              │   (pure readers)      │
-                 └───┬────────┬───┘              └───────────────────────┘
-          add/delete │        │ add/delete
-             ┌───────▼──┐  ┌──▼────────────┐
-             │ Inverted │  │  Vector DB    │
-             │  index   │  │  (Chroma)     │
-             └──────────┘  └───────────────┘
+        ┌──────────────────────── React (Vite + Tailwind) ─────────────────────────┐
+        │  Sidebar: per-user history, tagged VSM / BM25 / RAG                       │
+        │  Admin (admin only): upload · corpus table · delete                       │
+        │  Search: query · engine · PRF toggle · results | RAG chat                 │
+        └──────────────────────────────────┬───────────────────────────────────────┘
+                                           │  /api   Authorization: Bearer <access>
+        ┌──────────────────────────────────▼───────────────────────────────────────┐
+        │                              FastAPI                                      │
+        │   get_current_user ─── guards search, listing, history                    │
+        │   get_current_admin ── guards upload and delete                           │
+        │   api/auth.py   api/documents.py   api/search.py   api/conversations.py   │
+        └───────┬───────────────────────┬───────────────────────────┬──────────────┘
+                │ write                 │ read                      │ read/write
+        ┌───────▼────────┐   ┌──────────▼──────────┐                │
+        │   corpus.py    │   │  lexical/ semantic/ │                │
+        │  SINGLE WRITER │   │   (pure readers)    │                │
+        └───┬────────┬───┘   └─────────────────────┘                │
+ add/delete │        │ add/delete                                   │
+    ┌───────▼──┐  ┌──▼────────────┐          ┌────────────────────▼─────────────┐
+    │ Inverted │  │  Vector DB    │          │  SQLite  meta.db                  │
+    │  index   │  │  (Chroma)     │◀─derived─│  documents · chunks               │
+    └──────────┘  └───────────────┘  from    │  users · conversations · messages │
+         ▲                                   └───────────────────────────────────┘
+         └────────────────── derived from ───────────────┘
 ```
+
+**One database, two derived indexes.** Accounts and history live in the same
+`meta.db` as the corpus, not in a second database file. The inverted index and
+Chroma are *caches* — both are rebuilt from SQLite at startup whenever they
+drift. A user row is not rebuildable from anything, so it belongs in the source
+of truth: one file to back up, and foreign keys that actually resolve.
 
 **The one architectural rule:** `corpus.py` is the only module that writes. Both
 indexes are mutated from a single function, so they cannot drift apart — that is
@@ -47,8 +58,67 @@ The retrieval engines never write; they only read what `corpus.py` built.
 | 3 | BM25, Rocchio pseudo-relevance feedback | ✅ |
 | 4 | Embeddings, Chroma, RAG with citations | ✅ |
 | 5 | React admin + search UI | ✅ |
-| 6 | Bonus: URL scraping, visualization, reranking | ☐ |
-| 7 | Evaluation, Docker, docs | ☐ |
+| 6 | JWT accounts, client/admin roles, per-user history | ✅ |
+| 7 | Bonus: URL scraping, visualization, reranking | ☐ |
+| 8 | Evaluation, Docker, docs | ☐ |
+
+## Accounts and roles
+
+Two roles, and the difference between them is exactly one thing: who may change
+the corpus.
+
+| | search & chat | read the corpus listing | upload / delete documents |
+|---|---|---|---|
+| **client** | ✅ | ✅ | ❌ |
+| **admin** | ✅ | ✅ | ✅ |
+
+`POST /api/auth/register` always creates a **client** — the role is not a field
+it reads, so no request body can talk it into minting an admin. The single admin
+is seeded at startup from `ADMIN_EMAIL` / `ADMIN_PASSWORD`, which makes the
+environment the only place an admin can come from.
+
+Passwords are **bcrypt** hashes. `gensalt()` draws 16 fresh random bytes per
+password and `hashpw` stores them inside the hash string, so two users with the
+same password still get different hashes and one leaked table cannot be attacked
+with a single precomputed table. There is no separate salt column because there
+does not need to be — the salt travels in the hash.
+
+Authentication is a **30-minute access token** plus a **7-day refresh token**,
+both JWTs signed with `JWT_SECRET`. The `kind` claim is inside the payload, not
+merely implied by the lifetime: without it the two tokens are indistinguishable
+to the verifier and the 30-minute limit becomes seven days. The frontend
+refreshes on a 401 and replays the request, so expiry is invisible until the
+refresh token itself dies.
+
+There is deliberately **no refresh-token table**. Storing them would buy
+revocation, at the cost of a lookup on every refresh and a logout that has to
+reach the server. Rotating `JWT_SECRET` is the global sign-out.
+
+`JWT_SECRET` has **no default value** in `config.py`, so a missing secret is a
+startup crash rather than an app quietly signing tokens with a value that is in
+the repository. Generate one with:
+
+```bash
+python -c "import secrets; print(secrets.token_hex(32))"
+```
+
+## History
+
+Every search and every chat is saved against the account that ran it and listed
+in the sidebar, tagged with the engine that answered it. Clicking a row restores
+it; the two engine families restore differently, on purpose:
+
+- **VSM and BM25** store only the query and how it was run (`mode`, `prf`). A
+  lexical search replays in under a millisecond, and stored snippets would go
+  stale the moment an admin deletes the document they came from.
+- **RAG** stores the answer in full, with its citations and retrieved passages.
+  Regenerating one costs an LLM call and would not come back the same anyway, so
+  a replay has to be an actual replay.
+
+Ownership is a `WHERE user_id = ?` on every query rather than a check in the
+route — there is no function in `database/conversations.py` that reads a thread
+without being told whose it is. Missing and not-yours both return 404, because
+"that exists but is not yours" leaks that it exists.
 
 ## Running it
 
@@ -62,11 +132,17 @@ stores live under `backend/data/index/` and are created on first run.
 python3 -m venv venv
 source venv/bin/activate
 pip install -r backend/requirements.txt
-cp .env.example .env          # then put your key in LLM_API_KEY
+cp .env.example .env          # then fill in LLM_API_KEY, JWT_SECRET, ADMIN_PASSWORD
 (cd frontend && npm install)
 ```
 
-The first backend start downloads the embedding model (~90 MB) into the
+`JWT_SECRET` is required — the backend refuses to start without it:
+
+```bash
+python -c "import secrets; print(secrets.token_hex(32))"
+```
+
+The first backend start downloads the embedding model (~470 MB) into the
 HuggingFace cache. Everything after that is offline except LLM generation.
 
 ### Every time — two terminals
@@ -95,6 +171,7 @@ python -m tests.test_ingest
 python -m tests.test_lexical
 python -m tests.test_bm25_prf
 python -m tests.test_rag_sync
+python -m tests.test_auth
 ```
 
 ### Starting over
@@ -116,49 +193,124 @@ rm -rf backend/data/index/             # full reset: re-upload the documents
 | RAG answers `null` with a `note` | no key set — retrieval still works, generation does not |
 | `Address already in use` | an old `uvicorn` is alive: `pkill -f "uvicorn app"` |
 | search returns nothing after a restart | index missing; it rebuilds at startup, check the log |
+| backend won't start, `jwt_secret Field required` | `JWT_SECRET` missing from `.env` — this is deliberate, not a bug |
+| Admin tab missing | you are signed in as a client; the seeded admin is `ADMIN_EMAIL` |
+| every request 401s after ~30 min idle | refresh token expired too (7 days) — sign in again |
+| `403 This action requires an admin account` | a client tried to upload or delete; the gate is working |
 
 ## API
 
-| Method | Path | Purpose |
-|---|---|---|
-| `GET` | `/api/health` | status + which LLM is configured |
-| `GET` | `/api/documents` | corpus listing |
-| `POST` | `/api/documents` | upload a `.pdf` or `.docx` |
-| `DELETE` | `/api/documents/{id}` | remove from **every** index, reports what each removed |
-| `POST` | `/api/search` | `{query, engine, mode, prf, model, k}` → ranked hits |
-| `GET` | `/api/models` | LLM ids this key can reach, for the model picker |
+| Method | Path | Access | Purpose |
+|---|---|---|---|
+| `GET` | `/api/health` | open | status + which LLM is configured |
+| `POST` | `/api/auth/register` | open | create a **client** account, returns both tokens |
+| `POST` | `/api/auth/login` | open | exchange credentials for both tokens |
+| `POST` | `/api/auth/refresh` | open | 7-day refresh token → a fresh 30-minute access token |
+| `GET` | `/api/auth/me` | client | who the current token belongs to |
+| `GET` | `/api/documents` | client | corpus listing |
+| `POST` | `/api/documents` | **admin** | upload a `.pdf` or `.docx` |
+| `DELETE` | `/api/documents/{id}` | **admin** | remove from **every** index, reports what each removed |
+| `POST` | `/api/search` | client | `{query, engine, mode, prf, model, k}` → ranked hits |
+| `POST` | `/api/search/stream` | client | RAG as NDJSON events |
+| `GET` | `/api/models` | client | LLM ids this key can reach, for the model picker |
+| `GET` | `/api/conversations` | client | this user's history, for the sidebar |
+| `GET` | `/api/conversations/{id}` | client | one thread with its messages |
+| `POST` | `/api/conversations` | client | create or replace a thread |
+| `DELETE` | `/api/conversations/{id}` | client | delete a thread (messages go by CASCADE) |
+
+"client" means any signed-in account, admins included. Unauthenticated requests
+get **401**; a client hitting an admin route gets **403**, not 401 — they are
+correctly signed in, so sending them back to the login screen would be a lie.
 
 ## Retrieval
 
-The inverted index is built from scratch: `postings[term] = {chunk_id: tf}`,
-plus a forward index for O(terms) deletion and a precomputed L2 norm per chunk.
+### The retrieval unit is the document
 
-Scoring is **lnc.ltc** (slide 7-Scoring s42) — documents get log tf, no idf,
-cosine normalization; queries get log tf, idf, cosine normalization. Top-K
-selection uses a binary min-heap, O(N log K) rather than sorting all N
-(slide 8-Scoring s13–14).
+Chunks exist because embedding models have a context window (spec §2.1) — they
+are not a thing anyone searches for. The spec is consistent about the unit
+everywhere it matters: VSM and BM25 "display a ranked list of relevant
+**documents**" (§3.3.2), use "TF-IDF weighting for queries and **documents**"
+(§3.2.1), eliminate by "only scoring **documents** that contain high-IDF query
+terms", and "assume the top *k* **documents** are relevant" for PRF.
+
+So the index keeps both levels, built in one pass:
+
+| level | holds | used by |
+|---|---|---|
+| chunk | `postings[term] = {chunk_id: tf}`, forward index, per-chunk norm | §2.1 indexing, RAG retrieval, choosing each result's snippet |
+| document | tf summed over the document's chunks, doc frequency, doc length, per-document norm | VSM, BM25, Rocchio — everything that produces a score |
+
+Scoring chunks instead is wrong in three compounding ways, and the third is the
+one that is easy to miss:
+
+1. **A document appears several times in one ranked list**, its chunks competing
+   against each other for result slots.
+2. **`df` stops meaning document frequency.** idf over chunks makes a term's
+   apparent rarity depend on how the corpus happened to be split.
+3. **BM25's `b` is left with nothing to normalize.** `b` exists to stop long
+   documents winning on raw term count — but chunking deliberately makes every
+   chunk about one length. On this corpus, chunk lengths vary with a coefficient
+   of variation of 0.36 against 0.69 for documents, so normalizing by chunk
+   length corrects for variance chunking had already removed.
+
+`tests/test_lexical.py::test_a_document_is_ranked_once_and_scored_whole` is the
+regression guard: a three-chunk document and a one-chunk document, asserting two
+ranked rows and a summed tf.
+
+### Weighting
+
+Scoring is **lnc.ltc**, which slide 7-Scoring s41 calls "a very standard
+weighting scheme" and s43 works through end to end — documents get log tf, no
+idf, cosine normalization; queries get log tf, idf, cosine normalization.
+`tests/test_lexical.py` reproduces s43's worked example. Top-K selection uses a
+binary min-heap, O(N log K) rather than sorting all N (slide 8-Scoring s13–14).
+
+One detail worth stating outright, because it differs from a naive reading:
+**documents carry no idf** — that is the `n` in `lnc`. idf measures a term's
+rarity across the collection, which is a property of the term and not of any one
+document, so weighting both sides by it squares the effect. Putting idf on the
+query side only is what lnc.ltc means and what s43 computes.
 
 Three retrieval modes, two of them inexact top-K (slide 8-Scoring s19):
 
 | `mode` | Contender set A | Safe? |
 |---|---|---|
-| `exact` | every chunk containing a query term | yes |
-| `champion` | champion lists — the `r` highest-tf chunks per term (s26) | no |
+| `exact` | every document containing a query term | yes |
+| `champion` | champion lists — the `r` highest-tf documents per term (s26) | no |
 | `elimination` | all postings, but only for high-idf query terms (s24) | no |
 
-`scored` in the response is how many chunks were actually visited, so the
+`scored` in the response is how many documents were actually scored, so the
 saving from an inexact mode is visible per query rather than merely claimed.
-All three modes work with both lexical engines.
+With PRF it is the total over **two** retrievals and can exceed the collection
+size — a document in both candidate sets is scored twice — so the response also
+carries `passes`, the per-retrieval split, and the UI renders "6 + 7 of 9"
+rather than an arithmetically impossible "13 of 9".
+All three modes work with both lexical engines, with two honest caveats:
+
+- **`elimination` scores are not comparable to `exact` scores.** s24 says to
+  "only accumulate scores from catcher and rye", so the dropped terms'
+  contributions are omitted rather than renormalized away — the score is a
+  genuine partial cosine, and it is systematically lower. The ranking is the
+  point; the magnitude is not comparable across modes, and the UI says so.
+- **`champion` is a looser approximation under BM25 than under VSM.** s26
+  scopes champion lists to tf-idf, where score rises monotonically with tf.
+  BM25 also divides by document length, so a high-tf long document can rank
+  below a low-tf short one the tf-ordered list omitted. Both modes are non-safe
+  by construction (s16); this combination is simply less tight.
 
 **BM25** (slide 11-Probabilistic s31–32) adds probabilistic weighting with
 tunable `k1` (term frequency saturation), `b` (length normalization) and `k3`
-(query-side saturation). The two models disagree in an instructive way: cosine
+(query-side saturation). `b` and `avgdl` are measured over documents, for the
+reason given above. The two models disagree in an instructive way: cosine
 normalization punishes a long document harder than BM25's `b=0.75`, so the
-same query can rank a different chunk first under each — which is why the
+same query can rank a different document first under each — which is why the
 spec asks for both.
 
 **Pseudo-relevance feedback** (slide 10) runs Rocchio on the assumption that
-the top hits of an initial retrieval are relevant:
+the top **documents** of an initial retrieval are relevant, as §3.2.1 words it.
+Building the centroid from chunks instead would let one long document
+contribute several times over, weighting the expansion by how the corpus
+happened to be split:
 
     q_m = α·q_0 + β·centroid(top n) − γ·centroid(next m)
 
@@ -177,6 +329,11 @@ nearest chunks from Chroma by cosine similarity, numbers them `[Doc 1] …
 [Doc N]` in the prompt, and asks the model to answer only from those passages
 and cite each claim. Citation markers are parsed back out of the answer and
 resolved to the chunks that produced them, so every claim is traceable.
+
+RAG is the one route that ranks **chunks**, deliberately: the passage is what
+goes into the prompt, and a citation has to point at the sentence a claim came
+from rather than at a whole PDF. So one document legitimately supplies several
+`[Doc N]` entries — the opposite of what the lexical list must do.
 
 Retrieved text is treated as untrusted input (RAG slides s44): the passages are
 fenced in the prompt and the instructions state they are reference material,
@@ -224,28 +381,36 @@ Any OpenAI-compatible endpoint works — set three variables in `.env`:
 the UI's model picker reflects the account rather than a hardcoded list. If a
 key gains access to more models, they appear without a code change.
 
-**Embeddings run locally on CPU** (`all-MiniLM-L6-v2`) and need no key, so
-semantic retrieval works offline and for free — only the generated answer
-requires a provider. It also keeps the vectors deterministic, which is what
-lets `eval/` compare runs.
+**Embeddings run locally on CPU** and need no key, so semantic retrieval works
+offline and for free — only the generated answer requires a provider. The model
+is `paraphrase-multilingual-MiniLM-L12-v2`, not the spec's `all-MiniLM-L6-v2`:
+the latter is English-only, and a Persian query scored 0.07 against the passage
+that answers it where the English phrasing scored 0.46 — noise, not retrieval.
+The multilingual sibling aligns 50+ languages in one space, so a Persian
+question retrieves an English passage. It costs ~470 MB against ~90 MB.
 
 ## Layout
 
 ```
 backend/app/
-  main.py          app factory: CORS, routers
-  core/            cross-cutting: config.py (every tunable), exceptions.py
-  database/        SQLite metadata: session.py (connection + schema),
-                   documents.py (all the SQL, in one place)
-  services/        business logic: ingest.py (pdf/docx/url -> chunks),
+  main.py          app factory: CORS, routers, admin seeding
+  core/            cross-cutting: config.py (every tunable), exceptions.py,
+                   security.py (bcrypt hashing + JWT mint/verify)
+  database/        SQLite: session.py (connection + schema), and one module
+                   per table group — documents.py, users.py, conversations.py
+  services/        business logic: ingest.py (pdf/docx -> chunks),
                    corpus.py (THE single writer to both indexes)
   engines/         the two retrieval engines + registry.py dispatch
     lexical/       text.py, index.py, heap.py, vsm.py, bm25.py
     semantic/      embedder.py, vectordb.py, llm.py, rag.py
-  api/             documents.py (CRUD), search.py — routing only, no logic
+  api/             documents.py (CRUD), search.py, conversations.py,
+                   auth.py (routes + get_current_user / get_current_admin)
   schemas.py       pydantic request/response models
-frontend/src/      pages/ + components/
-eval/              retrieval metrics notebook
+frontend/src/
+  api.js           one authed fetch: bearer header + refresh-and-replay
+  App.jsx          auth gate, sidebar layout, conversation state
+  pages/           Login.jsx, Search.jsx, Admin.jsx
+  components/      Sidebar.jsx (history), Chat.jsx, Results.jsx, …
 ```
 
 The dependency direction is one-way: `api` → `services` → (`database`, `engines`)

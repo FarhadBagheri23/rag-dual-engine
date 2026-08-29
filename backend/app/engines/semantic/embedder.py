@@ -2,8 +2,8 @@
 
 Embedding runs on CPU with no API key, so semantic *retrieval* works offline
 and for free; only the generation step in rag.py needs a provider. It also
-keeps the vectors deterministic, which matters for eval/: the same corpus
-always produces the same index.
+keeps the vectors deterministic: the same corpus always produces the same
+index, so two runs are comparable.
 
 The model is loaded lazily. Importing this module must stay cheap, because
 main.py imports the whole engine tree at startup and a ~90 MB model download
@@ -28,7 +28,3 @@ def embed_documents(texts: list[str]) -> list[list[float]]:
 
 def embed_query(text: str) -> list[float]:
     return _model().encode(text, normalize_embeddings=True).tolist()
-
-
-def dimensions() -> int:
-    return _model().get_sentence_embedding_dimension()

@@ -56,6 +56,79 @@ export const Alert = (p) => (
   </svg>
 );
 
+export const Send = (p) => (
+  <svg viewBox="0 0 24 24" {...base} {...p}>
+    <path d="M4 12 20 4l-8 16-2.2-6.2z" />
+  </svg>
+);
+
+export const Plus = (p) => (
+  <svg viewBox="0 0 24 24" {...base} {...p}>
+    <path d="M12 5v14M5 12h14" />
+  </svg>
+);
+
+export const User = (p) => (
+  <svg viewBox="0 0 24 24" {...base} {...p}>
+    <circle cx="12" cy="8" r="3.5" />
+    <path d="M5 20a7 7 0 0 1 14 0" />
+  </svg>
+);
+
+export const Logout = (p) => (
+  <svg viewBox="0 0 24 24" {...base} {...p}>
+    <path d="M15 17v1a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h7a2 2 0 0 1 2 2v1" />
+    <path d="M10 12h10m0 0-3-3m3 3-3 3" />
+  </svg>
+);
+
+export const Menu = (p) => (
+  <svg viewBox="0 0 24 24" {...base} {...p}>
+    <path d="M4 7h16M4 12h16M4 17h16" />
+  </svg>
+);
+
+export const Close = (p) => (
+  <svg viewBox="0 0 24 24" {...base} {...p}>
+    <path d="M6 6l12 12M18 6L6 18" />
+  </svg>
+);
+
+export const Lock = (p) => (
+  <svg viewBox="0 0 24 24" {...base} {...p}>
+    <rect x="4" y="10" width="16" height="11" rx="2" />
+    <path d="M8 10V7a4 4 0 0 1 8 0v3" />
+  </svg>
+);
+
+export const Mail = (p) => (
+  <svg viewBox="0 0 24 24" {...base} {...p}>
+    <rect x="3" y="5" width="18" height="14" rx="2" />
+    <path d="m3 7 9 6 9-6" />
+  </svg>
+);
+
+export const Eye = (p) => (
+  <svg viewBox="0 0 24 24" {...base} {...p}>
+    <path d="M2 12s3.6-6 10-6 10 6 10 6-3.6 6-10 6-10-6-10-6Z" />
+    <circle cx="12" cy="12" r="2.5" />
+  </svg>
+);
+
+export const EyeOff = (p) => (
+  <svg viewBox="0 0 24 24" {...base} {...p}>
+    <path d="M10.6 6.2A9.6 9.6 0 0 1 12 6c6.4 0 10 6 10 6a17 17 0 0 1-3.1 3.6M6.2 8.4A17 17 0 0 0 2 12s3.6 6 10 6a9.4 9.4 0 0 0 3.9-.8" />
+    <path d="M3 3l18 18" />
+  </svg>
+);
+
+export const History = (p) => (
+  <svg viewBox="0 0 24 24" {...base} {...p}>
+    <path d="M3.5 9A9 9 0 1 1 3 12.5" />
+    <path d="M3 4v5h5M12 7.5V12l3 2" />
+  </svg>
+);
+
 export const Spinner = (p) => (
   <svg viewBox="0 0 24 24" {...base} {...p} className={`animate-spin ${p.className || ""}`}>
     <path d="M12 3a9 9 0 1 0 9 9" />

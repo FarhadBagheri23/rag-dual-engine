@@ -15,10 +15,39 @@ CORPUS = Path(__file__).resolve().parent.parent / "data" / "sample_corpus"
 
 def test_parse_both_formats():
     for path in sorted(CORPUS.iterdir()):
-        text, title = ingest.parse(path)
+        text, title = ingest.parse(path, path.name)
         assert len(text.split()) > 100, f"{path.name}: only {len(text.split())} words"
         assert title, f"{path.name}: no title"
     print(f"  parsed {len(list(CORPUS.iterdir()))} files (.pdf and .docx)")
+
+
+def test_title_never_comes_from_the_temp_file():
+    """Uploads are parsed from a temp path, so a title fallback that reads the
+    path produces names like `tmpoqta_c1i`. Precedence is: what the uploader
+    typed, then the document's own metadata title, then the real filename."""
+    init_db()
+    src = CORPUS / "tf-idf.pdf"
+    # a temp-style name, exactly as tempfile.NamedTemporaryFile would produce
+    tmp = Path(settings.upload_dir) / "tmpq7x2ab9z.pdf"
+
+    def upload(filename, title=None):
+        tmp.write_bytes(src.read_bytes())
+        doc = corpus.add(tmp, filename, title)
+        corpus.remove(doc["id"])
+        return doc["title"]
+
+    assert upload("Learning to Rank_new.pdf", "Learning to Rank") == "Learning to Rank"
+    # tf-idf.pdf carries its own metadata title, which beats the filename
+    assert upload("Learning to Rank_new.pdf") == "TF-IDF Weighting"
+
+    # and with no metadata title, the filename stem — never the temp stem
+    original = ingest.PARSERS[".pdf"]
+    ingest.PARSERS[".pdf"] = lambda p: (original(p)[0], "")
+    try:
+        assert upload("Learning to Rank_new.pdf") == "Learning to Rank_new"
+    finally:
+        ingest.PARSERS[".pdf"] = original
+    print("  typed title > metadata title > filename stem; temp name never used")
 
 
 def test_chunk_overlap():
@@ -64,7 +93,12 @@ def test_add_then_remove_leaves_nothing():
 
 
 if __name__ == "__main__":
-    for fn in (test_parse_both_formats, test_chunk_overlap, test_add_then_remove_leaves_nothing):
+    for fn in (
+        test_parse_both_formats,
+        test_title_never_comes_from_the_temp_file,
+        test_chunk_overlap,
+        test_add_then_remove_leaves_nothing,
+    ):
         print(fn.__name__)
         fn()
     print("\nall phase-1 checks passed")

@@ -85,11 +85,21 @@ def remove(chunk_ids: list[str]) -> int:
 
 def query(text: str, k: int) -> list[dict]:
     """Nearest chunks by cosine similarity to the query embedding."""
+    return query_vector(embedder.embed_query(text), k)
+
+
+def query_vector(vector: list[float], k: int) -> list[dict]:
+    """The search half alone, for callers that already embedded the query.
+
+    rag.stream needs the two steps separated so it can report "embedding" and
+    "retrieving" as they actually happen — a progress indicator that groups
+    them is guessing at where the time went.
+    """
     col = collection()
     if col.count() == 0:
         return []
     res = col.query(
-        query_embeddings=[embedder.embed_query(text)],
+        query_embeddings=[vector],
         n_results=min(k, col.count()),
         include=["distances"],
     )

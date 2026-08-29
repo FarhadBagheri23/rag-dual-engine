@@ -5,9 +5,13 @@ const ENGINES = [
 ];
 
 const MODES = [
-  { id: "champion", label: "Champion lists" },
-  { id: "elimination", label: "Index elimination" },
-  { id: "exact", label: "Exact (safe)" },
+  { id: "champion", label: "Champion lists", hint: "r highest-tf chunks per term" },
+  {
+    id: "elimination",
+    label: "Index elimination",
+    hint: "high-idf query terms only — scores omit the dropped terms",
+  },
+  { id: "exact", label: "Exact (safe)", hint: "every chunk containing a query term" },
 ];
 
 function Segmented({ label, options, value, onChange }) {

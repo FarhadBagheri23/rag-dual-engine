@@ -25,14 +25,16 @@ def test_bm25_against_hand_computation():
     assert (k1, b, k3) == (1.5, 0.75, 1.2), (k1, b, k3)
 
     avgdl = (4 + 2 + 2) / 3
-    idf = math.log(3 / 2)  # natural log, whole-collection approximation
+    # log10, the base both engines share — spelled out here rather than calling
+    # index.idf, so this stays an independent check of the formula.
+    idf = math.log10(3 / 2)
 
     def expect(tf, dl, qf=1):
         norm_len = 1 - b + b * (dl / avgdl)
         return idf * ((k1 + 1) * tf) / (k1 * norm_len + tf) * ((k3 + 1) * qf) / (k3 + qf)
 
     result = bm25.search("insurance", k=10, mode="exact")
-    got = {h["chunk_id"]: h["score"] for h in result["hits"]}
+    got = {h["doc_id"]: h["score"] for h in result["hits"]}
 
     assert math.isclose(got["c1"], expect(tf=2, dl=4), abs_tol=1e-9), got
     assert math.isclose(got["c2"], expect(tf=1, dl=2), abs_tol=1e-9), got
@@ -47,8 +49,8 @@ def test_bm25_and_vsm_disagree_on_length_penalty():
     hard for being longer; BM25's b=0.75 is gentler, so c1's higher term
     frequency wins. Worth demonstrating: it is why the spec asks for both."""
     load_toy()
-    vsm_top = vsm.search("insurance", k=10, mode="exact")["hits"][0]["chunk_id"]
-    bm25_top = bm25.search("insurance", k=10, mode="exact")["hits"][0]["chunk_id"]
+    vsm_top = vsm.search("insurance", k=10, mode="exact")["hits"][0]["doc_id"]
+    bm25_top = bm25.search("insurance", k=10, mode="exact")["hits"][0]["doc_id"]
     assert vsm_top == "c2" and bm25_top == "c1", (vsm_top, bm25_top)
     print(f"  vsm top={vsm_top}  bm25 top={bm25_top}  (same query, different model)")
 
@@ -72,7 +74,7 @@ def test_k3_only_matters_for_repeated_query_terms():
         # identical — (2.2*1)/2.2 does not land on exactly 1.0 — but the
         # residual is ~1e-16, i.e. the factor really is inert.)
         for x, y in zip(no_repeat_a, no_repeat_b):
-            assert x["chunk_id"] == y["chunk_id"]
+            assert x["doc_id"] == y["doc_id"]
             assert math.isclose(x["score"], y["score"], rel_tol=1e-12), (x, y)
         # qf=2: the factor is live, so scores move by a visible amount
         assert not math.isclose(
@@ -141,8 +143,13 @@ def test_prf_search_reports_its_expansion():
 
         assert "expansion" not in plain
         assert with_prf["expansion"], with_prf
-        # two retrievals, so more chunks are visited than a single pass
+        # Two retrievals, so more scoring work than a single pass — and the
+        # total is reported per pass, because summed it can exceed the number
+        # of documents that exist (a document in both passes is scored twice).
         assert with_prf["scored"] > plain["scored"], (with_prf, plain)
+        assert len(with_prf["passes"]) == 2, with_prf["passes"]
+        assert sum(with_prf["passes"]) == with_prf["scored"], with_prf
+        assert "passes" not in plain, "a single pass needs no breakdown"
         print(f"  plain scored={plain['scored']}, prf scored={with_prf['scored']}, "
               f"expansion={with_prf['expansion']}")
     finally:

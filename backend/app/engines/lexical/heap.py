@@ -48,5 +48,18 @@ class TopKMinHeap:
             self._sift_down(0)
 
     def ranked(self) -> list[tuple[float, str]]:
-        """The kept items, best first."""
+        """The kept items, best first — s13's O(k log k) read-off."""
         return sorted(self.heap, key=lambda pair: pair[0], reverse=True)
+
+    def hits(self, matched: set[str]) -> list[dict]:
+        """The kept items as engine hits. Both lexical engines end this way:
+        rank, then label every hit with the query terms that produced it.
+
+        Keyed `doc_id` because the document is what these engines rank. The
+        snippet's chunk is attached later, in the API layer, from whichever
+        chunk of that document best matches — see index.best_chunk.
+        """
+        return [
+            {"doc_id": doc_id, "score": score, "matched": matched}
+            for score, doc_id in self.ranked()
+        ]

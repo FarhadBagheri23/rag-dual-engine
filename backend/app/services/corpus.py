@@ -17,9 +17,15 @@ from app.engines.semantic import vectordb
 from app.services import ingest
 
 
-def add(upload_path: Path, filename: str) -> dict:
-    """Parse, chunk and persist one file. Returns the document row."""
-    text, title = ingest.parse(upload_path)
+def add(upload_path: Path, filename: str, title: str | None = None) -> dict:
+    """Parse, chunk and persist one file. Returns the document row.
+
+    `title` is what the uploader typed, and it wins when present. Otherwise the
+    document's own metadata title is used, and failing that its filename —
+    never the temporary path the bytes happen to be sitting in.
+    """
+    text, parsed_title = ingest.parse(upload_path, filename)
+    title = (title or "").strip() or parsed_title
     doc_id = ingest.new_doc_id()
     chunks = ingest.chunk(text, doc_id)
 
@@ -35,10 +41,19 @@ def add(upload_path: Path, filename: str) -> dict:
         "file_type": upload_path.suffix.lower().lstrip("."),
         "n_words": len(text.split()),
     }
+    # Embedding runs inside this call and can fail — no key, no model, disk full.
+    # A document that reached SQLite and the inverted index but not Chroma is
+    # live in VSM/BM25 and invisible to RAG, while the caller sees a 500 and
+    # believes nothing happened. Undo instead: the startup reconcile would
+    # eventually repair it, but "eventually" is the next restart.
     db.insert(doc, chunks)
-    lexical_index.add(chunks, doc_id)
-    lexical_index.save()
-    vectordb.add(chunks, doc_id)
+    try:
+        lexical_index.add(chunks, doc_id)
+        lexical_index.save()
+        vectordb.add(chunks, doc_id)
+    except Exception:
+        remove(doc_id)
+        raise
     return {**doc, "n_chunks": len(chunks), "added_at": db.get(doc_id)["added_at"]}
 
 

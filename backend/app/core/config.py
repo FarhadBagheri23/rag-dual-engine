@@ -1,12 +1,12 @@
 """Every tunable in one place.
 
 Values that differ between the project spec and the course slides are marked
-SPEC / SLIDES — the default follows the spec (it is the graded document) and
-eval/evaluation.ipynb sweeps the alternative.
+SPEC / SLIDES — the default follows the spec, it being the graded document.
 """
 
 from pathlib import Path
 
+from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 BASE_DIR = Path(__file__).resolve().parents[2]  # backend/
@@ -29,6 +29,18 @@ class Settings(BaseSettings):
     # out-of-scope -0.07-0.15. 0.22 sits in the gap.
     rag_min_score: float = 0.22
 
+    # --- auth ---
+    # No default, deliberately: pydantic refuses to construct Settings without
+    # JWT_SECRET, so a missing secret is a startup crash rather than an app
+    # silently signing tokens with a value that is in the repo.
+    jwt_secret: str
+    jwt_algorithm: str = "HS256"
+    access_token_minutes: int = 30
+    refresh_token_days: int = 7
+    # The single admin, seeded at startup. Blank disables seeding.
+    admin_email: str = ""
+    admin_password: str = ""
+
     # --- storage ---
     upload_dir: Path = BASE_DIR / "data" / "uploads"
     index_dir: Path = BASE_DIR / "data" / "index"
@@ -38,7 +50,7 @@ class Settings(BaseSettings):
 
     # --- chunking (RAG slides s32: recursive splitter, respects paragraph bounds) ---
     # Measured in WORDS, because the spec says "500 words with a 50-word overlap".
-    # The slides' lab used 1000/150 *characters* (~160/24 words); eval/ sweeps both.
+    # SLIDES: the RAG lab used 1000/150 *characters* (~160/24 words).
     chunk_size: int = 500
     chunk_overlap: int = 50
 
@@ -47,7 +59,11 @@ class Settings(BaseSettings):
     champion_r: int = 50  # 8-Scoring s26: r docs of highest tf per term
     # 8-Scoring s24: keep query terms whose idf is >= this fraction of the
     # query's highest idf. 0 keeps everything, 1 keeps only the rarest term.
-    elimination_ratio: float = 0.3
+    # Bounded at the boundary rather than guarded at the call site: within
+    # [0, 1] the highest-idf term always clears its own floor, so elimination
+    # can never empty a query. Above 1 it silently could, so pydantic rejects
+    # it at startup instead of returning zero hits at query time.
+    elimination_ratio: float = Field(0.3, ge=0.0, le=1.0)
 
     # --- BM25 (11-Probabilistic s31-32; k3 saturates long queries) ---
     bm25_k1: float = 1.5  # SPEC 1.5 / HW2 1.2

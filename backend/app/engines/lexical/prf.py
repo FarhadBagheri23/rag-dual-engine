@@ -13,10 +13,16 @@ Two details from the slides that are easy to miss:
   * Rocchio produces a very long query, and long queries are expensive to
     process — the slides cap the expansion at the top ~20 terms (s20).
 
+The feedback set is **documents**, per spec §3.2.1: "assume the top k documents
+are relevant, expand the query with the most frequent/important terms from these
+documents". Building the centroid from chunks instead would let one long
+document contribute several times over, weighting the expansion by how the
+corpus happened to be split.
+
 The centroid is built from *ltc* document vectors, not the *lnc* weights the
 index stores. Rocchio adds documents to a query, so both must live in the
 same space, and the query side is idf-weighted. The feedback set is only a
-few dozen chunks, so recomputing their idf-weighted vectors is cheap.
+few dozen documents, so recomputing their idf-weighted vectors is cheap.
 """
 
 import math
@@ -26,29 +32,29 @@ from app.engines.lexical.index import index, log_tf
 from app.engines.lexical.vsm import rank
 
 
-def _doc_vector_ltc(chunk_id: str) -> dict[str, float]:
-    """A chunk as a unit-length idf-weighted vector — the query's space."""
-    forward = index.forward.get(chunk_id, {})
+def _doc_vector_ltc(doc_id: str) -> dict[str, float]:
+    """A document as a unit-length idf-weighted vector — the query's space."""
+    forward = index.doc_forward.get(doc_id, {})
     vec = {t: log_tf(tf) * index.idf(t) for t, tf in forward.items()}
     vec = {t: w for t, w in vec.items() if w > 0}
     norm = math.sqrt(sum(w * w for w in vec.values())) or 1.0
     return {t: w / norm for t, w in vec.items()}
 
 
-def _centroid(chunk_ids: list[str]) -> dict[str, float]:
-    if not chunk_ids:
+def _centroid(doc_ids: list[str]) -> dict[str, float]:
+    if not doc_ids:
         return {}
     acc: dict[str, float] = {}
-    for cid in chunk_ids:
-        for term, weight in _doc_vector_ltc(cid).items():
+    for doc_id in doc_ids:
+        for term, weight in _doc_vector_ltc(doc_id).items():
             acc[term] = acc.get(term, 0.0) + weight
-    n = len(chunk_ids)
+    n = len(doc_ids)
     return {t: w / n for t, w in acc.items()}
 
 
 def expand(q0: dict[str, float], ranked: list[dict]) -> dict[str, float]:
     """One Rocchio iteration over an initial ranking. Returns the new query."""
-    ids = [h["chunk_id"] for h in ranked]
+    ids = [h["doc_id"] for h in ranked]
     relevant = ids[: settings.prf_n_relevant]
     nonrelevant = ids[
         settings.prf_n_relevant : settings.prf_n_relevant + settings.prf_n_nonrelevant
@@ -88,6 +94,11 @@ def search(q0: dict[str, float], k: int, mode: str) -> dict:
     added = sorted(set(qm) - set(q0), key=qm.get, reverse=True)
     return {
         "hits": second["hits"],
+        # Total scoring work, summed over both retrievals — which can exceed the
+        # collection size, because a document scored in both passes is scored
+        # twice. `passes` carries the split so the UI can say "6 + 7 of 9"
+        # rather than the nonsense "13 of 9".
         "scored": first["scored"] + second["scored"],
+        "passes": [first["scored"], second["scored"]],
         "expansion": added,
     }

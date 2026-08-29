@@ -44,11 +44,58 @@ def test_prompt_guards_against_injection():
     context = rag._context([{"id": "x:0", "title": "T", "text": "body"}])
     assert "[Doc 1]" in context and "source: T" in context
 
-    prompt = rag.PROMPT.format(context=context, question="q")
+    prompt = rag.PROMPT.format(
+        context=context, question="q", conversation="", resolved=""
+    )
     assert "<passages>" in prompt and "</passages>" in prompt, "context not fenced"
     assert "not instructions" in prompt, "no injection guard"
     assert "ONLY" in prompt and "I don't know" in prompt, "no grounding instruction"
+
+    # Conversation history is fenced separately and marked as non-evidence:
+    # it exists to resolve "just it?", not to be quoted back as fact.
+    with_history = rag.PROMPT.format(
+        context=context,
+        question="just it?",
+        conversation="\n<conversation>\nUser: earlier\n</conversation>\n",
+        resolved="Which in this conversation means: is that the only reason?\n",
+    )
+    assert "<conversation>" in with_history, "history not fenced"
+    assert "not evidence" in with_history, "history not marked as non-evidence"
     print("  context fenced, injection guard and grounding instruction present")
+    print("  history fenced separately and marked as non-evidence")
+
+
+def test_query_rewriting_resolves_follow_ups_and_fails_safe():
+    """RAG slides s24. A follow-up carries its meaning in the conversation, so
+    "just it?" must be resolved before it is embedded — otherwise it retrieves
+    nothing, trips the relevance floor, and the user is told their own
+    follow-up is out of corpus. Rewriting is an optimisation, though: when the
+    model misbehaves the original question has to survive."""
+    from app.engines.semantic import llm
+
+    real = llm.complete
+    transcript = "User: Why normalise document length?\nAssistant: Because …"
+    try:
+        llm.complete = lambda *a, **k: '  "Why is document length normalised?"  '
+        assert (
+            rag._rewrite("just it?", transcript, None)
+            == "Why is document length normalised?"
+        ), "quotes and whitespace not stripped"
+
+        # Each failure mode falls back to the question the user actually asked.
+        for name, stub in [
+            ("empty reply", lambda *a, **k: "   "),
+            ("runaway reply", lambda *a, **k: "x" * 501),
+            ("provider down", lambda *a, **k: (_ for _ in ()).throw(RuntimeError())),
+        ]:
+            llm.complete = stub
+            assert rag._rewrite("just it?", transcript, None) == "just it?", name
+    finally:
+        llm.complete = real
+
+    # And with no history there is nothing to resolve, so no call is made.
+    assert rag._transcript([]) == ""
+    print("  'just it?' -> resolved; empty/runaway/failed rewrites fall back")
 
 
 def test_provider_errors_map_to_actionable_status():
@@ -68,13 +115,15 @@ def test_provider_errors_map_to_actionable_status():
     print("  403 -> 400 (caller can fix), 503/None -> 502 (upstream fault)")
 
 
+def counts():
+    """(sqlite, postings, vectors) — the three numbers that must agree."""
+    return len(db.all_chunks()), index.n_chunks, vectordb.count()
+
+
 def test_both_indexes_stay_synchronized():
     """The rubric line: add and remove must leave SQLite, the inverted index
     and the vector store agreeing at every step."""
     init_db()
-
-    def counts():
-        return len(db.all_chunks()), index.n_chunks, vectordb.count()
 
     # Reconcile first, exactly as main.py does at startup — a corpus indexed
     # before the vector store existed starts out with zero vectors.
@@ -119,6 +168,35 @@ def test_both_indexes_stay_synchronized():
           f"{result['postings_removed']} postings, {result['vectors_removed']} vectors")
 
 
+def test_failed_embedding_rolls_the_whole_document_back():
+    """Embedding runs inside the upload request and can fail — no key, no
+    model, disk full. Before the rollback, a raising vectordb.add left the
+    document in SQLite and the inverted index but not Chroma: live in VSM and
+    BM25, invisible to RAG, while the caller got a 500 and assumed nothing had
+    happened. The stores must end where they started."""
+    init_db()
+    before = counts()
+
+    src = CORPUS / "okapi-bm25.pdf"
+    tmp = settings.upload_dir / "_rollback_test.pdf"
+    tmp.write_bytes(src.read_bytes())
+
+    real_add = vectordb.add
+    vectordb.add = lambda *a, **k: (_ for _ in ()).throw(RuntimeError("chroma down"))
+    try:
+        corpus.add(tmp, "okapi-bm25.pdf")
+        raise AssertionError("corpus.add swallowed the failure")
+    except RuntimeError:
+        pass  # the caller sees the real error, which is the point
+    finally:
+        vectordb.add = real_add
+        tmp.unlink(missing_ok=True)
+
+    after = counts()
+    assert after == before, f"drift after a failed add: {before} -> {after}"
+    print(f"  vectordb.add raised -> {after}, unchanged from {before}")
+
+
 def test_semantic_beats_keyword_on_vocabulary_mismatch():
     """The reason the dense index exists: a query sharing no words with the
     answer. If this ever fails, the embedding half is not earning its keep."""
@@ -136,8 +214,10 @@ if __name__ == "__main__":
     for fn in [
         test_citation_parsing,
         test_prompt_guards_against_injection,
+        test_query_rewriting_resolves_follow_ups_and_fails_safe,
         test_provider_errors_map_to_actionable_status,
         test_both_indexes_stay_synchronized,
+        test_failed_embedding_rolls_the_whole_document_back,
         test_semantic_beats_keyword_on_vocabulary_mismatch,
     ]:
         print(fn.__name__)

@@ -8,6 +8,10 @@ python-multipart==0.0.20
 pymupdf==1.25.2
 python-docx==1.1.2
 langchain-text-splitters==0.3.5
+# --- phase 2: term normalization (slide 3-Document Preprocessing s17-18) ---
+# Porter's algorithm by the name the slides use. Pure Python, no dependencies
+# of its own — nltk would pull a far larger tree for the same one class.
+snowballstemmer==2.2.0
 # --- phase 4: embeddings, vector store, generation ---
 # Install CPU-only torch FIRST — the default PyPI wheel bundles ~2.5 GB of CUDA
 # kernels this project never uses (all-MiniLM-L6-v2 runs on CPU by design):
@@ -16,3 +20,10 @@ torch==2.6.0
 chromadb==0.6.3
 sentence-transformers==3.4.1
 openai==1.60.2
+# --- phase 6: accounts, roles, per-user history ---
+# bcrypt directly rather than through passlib: passlib's CryptContext exists to
+# swap between hash schemes, and there is one scheme here. PyJWT is the whole
+# token layer — FastAPI already ships HTTPBearer and Depends, so there is no
+# auth framework to add on top.
+bcrypt==5.0.0
+PyJWT==2.10.1

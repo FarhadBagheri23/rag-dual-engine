@@ -9,18 +9,37 @@ export default function AdminView({ docs, reload }) {
   const [busy, setBusy] = useState(null);
   const [error, setError] = useState(null);
   const [lastDelete, setLastDelete] = useState(null);
+  // Chosen files wait here until the user commits them, so there is a moment
+  // in between to name each one. Uploading straight from the picker is what
+  // made the title unsettable: by the time you saw the row, it was indexed.
+  const [pending, setPending] = useState([]);
   const fileInput = useRef(null);
 
-  async function upload(files) {
+  function stage(files) {
     setError(null);
-    for (const file of files) {
+    setPending((current) => [
+      ...current,
+      ...files.map((file) => ({ file, title: "" })),
+    ]);
+  }
+
+  function retitle(index, title) {
+    setPending((current) =>
+      current.map((item, i) => (i === index ? { ...item, title } : item))
+    );
+  }
+
+  async function upload() {
+    setError(null);
+    for (const { file, title } of pending) {
       setBusy(`Indexing ${file.name}…`);
       try {
-        await api.uploadDocument(file);
+        await api.uploadDocument(file, title.trim());
       } catch (e) {
         setError(`${file.name}: ${e.message}`);
       }
     }
+    setPending([]);
     setBusy(null);
     reload();
   }
@@ -51,7 +70,7 @@ export default function AdminView({ docs, reload }) {
         onDrop={(e) => {
           e.preventDefault();
           setOver(false);
-          upload([...e.dataTransfer.files]);
+          stage([...e.dataTransfer.files]);
         }}
         className={`mb-5 flex w-full cursor-pointer flex-col items-center rounded-lg border-2 border-dashed p-10 transition-colors duration-150 ${
           over ? "border-accent bg-accent/5" : "border-line hover:border-edge"
@@ -72,10 +91,70 @@ export default function AdminView({ docs, reload }) {
         multiple
         className="sr-only"
         onChange={(e) => {
-          upload([...e.target.files]);
-          e.target.value = "";
+          stage([...e.target.files]);
+          e.target.value = ""; // so re-picking the same file fires onChange
         }}
       />
+
+      {/* Staged but not yet indexed: one title box per file, because a title
+          belongs to a document and there may be several. */}
+      {pending.length > 0 && (
+        <div className="card mb-5 p-4">
+          <div className="mb-3 text-xs font-medium uppercase tracking-wide text-dim">
+            Ready to upload ({pending.length})
+          </div>
+
+          <ul className="space-y-3">
+            {pending.map(({ file, title }, i) => (
+              <li key={`${file.name}-${i}`} className="rounded-md bg-muted p-3">
+                <div className="mb-2 flex items-center gap-3">
+                  <Doc className="h-4 w-4 shrink-0 text-dim" />
+                  <span className="flex-1 truncate font-mono text-xs text-dim">
+                    {file.name}
+                  </span>
+                  <button
+                    onClick={() =>
+                      setPending((c) => c.filter((_, j) => j !== i))
+                    }
+                    aria-label={`Remove ${file.name}`}
+                    className="cursor-pointer rounded p-1 text-dim transition-colors duration-150 hover:bg-danger/15 hover:text-danger"
+                  >
+                    <Trash className="h-3.5 w-3.5" />
+                  </button>
+                </div>
+                <label htmlFor={`title-${i}`} className="sr-only">
+                  Title for {file.name}
+                </label>
+                <input
+                  id={`title-${i}`}
+                  dir="auto"
+                  value={title}
+                  onChange={(e) => retitle(i, e.target.value)}
+                  placeholder="Title — blank uses the document's own, then its filename"
+                  className="w-full rounded-md border border-line bg-card px-3 py-2 text-sm placeholder:text-dim"
+                />
+              </li>
+            ))}
+          </ul>
+
+          <div className="mt-4 flex items-center gap-2">
+            <button
+              onClick={upload}
+              disabled={!!busy}
+              className="cursor-pointer rounded-lg bg-accent px-5 py-2 font-medium text-accent-ink transition-colors duration-150 hover:bg-accent/90 disabled:cursor-not-allowed disabled:opacity-40"
+            >
+              {busy ? "Uploading…" : `Upload ${pending.length}`}
+            </button>
+            <button
+              onClick={() => setPending([])}
+              disabled={!!busy}
+              className="cursor-pointer rounded-lg border border-line px-4 py-2 text-sm text-dim transition-colors duration-150 hover:border-edge hover:text-fg disabled:opacity-40"
+            >
+              Cancel
+            </button>
+          </div>
+        </div>
+      )}
 
       {busy && (
         <div className="card mb-5 flex items-center gap-2.5 p-3 text-sm" aria-live="polite">
