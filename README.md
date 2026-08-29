@@ -59,7 +59,7 @@ The retrieval engines never write; they only read what `corpus.py` built.
 | 4 | Embeddings, Chroma, RAG with citations | ✅ |
 | 5 | React admin + search UI | ✅ |
 | 6 | JWT accounts, client/admin roles, per-user history | ✅ |
-| 7 | Bonus: URL scraping, visualization, reranking | ☐ |
+| 7 | Bonus: URL scraping, visualization, reranking | ◐ scraping and visualization done, reranking open |
 | 8 | Evaluation, Docker, docs | ☐ |
 
 ## Accounts and roles
