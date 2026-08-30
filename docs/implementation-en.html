@@ -1,0 +1,907 @@
+<!doctype html>
+<html lang="en" dir="ltr">
+<head>
+<meta charset="utf-8">
+<title>Implementation Document — Dual-Engine Search &amp; RAG System</title>
+<style>
+  @page { size: A4; margin: 20mm 18mm 18mm 18mm; }
+
+  :root {
+    --ink:   #14181d;
+    --dim:   #55606d;
+    --rule:  #d4dae1;
+    --accent:#0f5c6e;
+    --box:   #f4f7f9;
+    --code:  #eef2f5;
+  }
+
+  * { box-sizing: border-box; }
+
+  body {
+    font-family: "Noto Serif", "DejaVu Serif", Georgia, serif;
+    font-size: 10.8pt;
+    line-height: 1.62;
+    color: var(--ink);
+    text-align: justify;
+    margin: 0;
+  }
+
+  code, .formula, pre {
+    font-family: "DejaVu Sans Mono", monospace;
+  }
+
+  code {
+    background: var(--code);
+    padding: 0.5mm 1.2mm;
+    border-radius: 2px;
+    font-size: 0.85em;
+  }
+
+  /* ---------- headings ---------- */
+  h1 { font-size: 22pt; color: var(--accent); margin: 0 0 2mm; line-height: 1.3; }
+  h2 {
+    font-size: 14.5pt; color: var(--accent);
+    margin: 9mm 0 3mm; padding-bottom: 1.5mm;
+    border-bottom: 1.6px solid var(--accent);
+    page-break-after: avoid;
+  }
+  h3 {
+    font-size: 12.3pt; color: #22333d;
+    margin: 6mm 0 2mm;
+    page-break-after: avoid;
+  }
+  h2 + p, h3 + p { margin-top: 0; }
+  p { margin: 0 0 3mm; }
+
+  ul, ol { margin: 0 0 3mm; padding-left: 6mm; }
+  li { margin-bottom: 1.5mm; }
+
+  /* ---------- cover ---------- */
+  .cover {
+    text-align: center;
+    padding-top: 45mm;
+    page-break-after: always;
+  }
+  .cover .sub { font-size: 14pt; color: var(--dim); margin-top: 3mm; }
+  .cover .meta { margin-top: 30mm; font-size: 11pt; color: var(--dim); line-height: 2.1; }
+  .cover hr { width: 45mm; border: 0; border-top: 2px solid var(--accent); margin: 8mm auto; }
+
+  /* ---------- formula ---------- */
+  .formula {
+    background: var(--box);
+    border-left: 3px solid var(--accent);
+    padding: 4mm 5mm;
+    margin: 3.5mm 0;
+    text-align: center;
+    font-size: 11pt;
+    line-height: 1.9;
+    page-break-inside: avoid;
+    border-radius: 0 3px 3px 0;
+  }
+  .formula .note {
+    font-family: "Noto Serif", "DejaVu Serif", Georgia, serif;
+    display: block;
+    font-size: 9.3pt;
+    color: var(--dim);
+    margin-top: 2.5mm;
+    text-align: center;
+  }
+
+  /* Fraction: numerator over denominator. nowrap is needed only here — if the
+     fraction itself breaks, the fraction bar is drawn over the wrong terms. The
+     formula as a whole must still be allowed to break between factors, or the
+     block grows wider than the page. */
+  .frac {
+    display: inline-block;
+    vertical-align: -0.55em;
+    text-align: center;
+    margin: 0 0.35em;
+    white-space: nowrap;
+  }
+  .frac > span { display: block; padding: 0 0.35em; }
+  .frac .den { border-top: 1.2px solid var(--ink); padding-top: 1px; }
+
+  sub, sup { font-size: 0.72em; }
+
+  /* ---------- tables ---------- */
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 3.5mm 0;
+    font-size: 9.6pt;
+    page-break-inside: avoid;
+  }
+  th, td {
+    border: 1px solid var(--rule);
+    padding: 1.8mm 2.5mm;
+    text-align: left;
+    vertical-align: top;
+  }
+  th { background: var(--box); font-weight: 700; color: #22333d; }
+  td.mono, th.mono { font-family: "DejaVu Sans Mono", monospace; font-size: 8.8pt; }
+
+  /* ---------- note box ---------- */
+  .note-box {
+    background: #fbf7ec;
+    border-left: 3px solid #c99a2e;
+    padding: 3mm 4mm;
+    margin: 3.5mm 0;
+    font-size: 10.2pt;
+    page-break-inside: avoid;
+    border-radius: 0 3px 3px 0;
+  }
+  .note-box b { color: #8a6414; }
+
+  .slide {
+    display: inline-block;
+    background: var(--code);
+    border: 1px solid var(--rule);
+    border-radius: 3px;
+    padding: 0.3mm 1.5mm;
+    font-size: 8.6pt;
+    font-family: "DejaVu Sans Mono", monospace;
+    color: var(--dim);
+  }
+
+  pre {
+    background: var(--code);
+    padding: 3mm 4mm;
+    font-size: 8.8pt;
+    line-height: 1.65;
+    overflow: visible;
+    white-space: pre-wrap;
+    border-radius: 3px;
+    page-break-inside: avoid;
+    margin: 3mm 0;
+  }
+
+  .pipeline {
+    background: var(--box);
+    padding: 4mm;
+    text-align: center;
+    font-size: 9.6pt;
+    font-family: "DejaVu Sans Mono", monospace;
+    line-height: 1.9;
+    border-radius: 3px;
+    margin: 3.5mm 0;
+    page-break-inside: avoid;
+  }
+
+  .pagebreak { page-break-before: always; }
+
+  /* table of contents */
+  .toc { font-size: 10.6pt; line-height: 2.0; }
+  .toc a { color: var(--ink); text-decoration: none; }
+  .toc .num { color: var(--accent); font-weight: 700; margin-right: 2mm; }
+</style>
+</head>
+<body>
+
+<div class="cover">
+  <h1>Dual-Engine Document Search &amp; Retrieval-Augmented Generation</h1>
+  <div class="sub">Implementation document — final project, Modern Information Retrieval</div>
+  <hr>
+  <div class="meta">
+    Sharif University of Technology — International Campus<br>
+    Course: Modern Information Retrieval<br>
+    Instructor: Amirali Ghahremani<br><br>
+    This document explains <b>how</b> each part of the system is implemented,<br>
+    with <b>which formula</b> it is computed, and which <b>course slide</b> it comes from.
+  </div>
+</div>
+
+<h2 id="toc">Table of Contents</h2>
+<div class="toc">
+  <span class="num">1.</span> Overall architecture and data flow<br>
+  <span class="num">2.</span> Indexing pipeline: parsing, chunking, two indexes<br>
+  <span class="num">3.</span> Text preprocessing: from word to term<br>
+  <span class="num">4.</span> Inverted index and data structures<br>
+  <span class="num">5.</span> Vector space model (VSM) with lnc.ltc weighting<br>
+  <span class="num">6.</span> Top-K document selection with a min-heap<br>
+  <span class="num">7.</span> Inexact top-K retrieval: champion lists and index elimination<br>
+  <span class="num">8.</span> Probabilistic model: Okapi BM25<br>
+  <span class="num">9.</span> Pseudo-relevance feedback with Rocchio<br>
+  <span class="num">10.</span> Semantic engine and the RAG pipeline<br>
+  <span class="num">11.</span> Keeping the two indexes in sync<br>
+  <span class="num">12.</span> Complete parameter table<br>
+  <span class="num">13.</span> Mapping the implementation to the course slides<br>
+</div>
+
+<!-- ============================================================ -->
+<h2 id="s1">1. Overall architecture and data flow</h2>
+
+<p>
+The system maintains two parallel data stores, both derived from a single source of
+truth (a SQLite database): an <b>inverted index</b> written from scratch, on which the
+lexical engines operate, and a <b>vector database</b> (ChromaDB), on which semantic
+retrieval and RAG operate.
+</p>
+
+<div class="pipeline">
+upload (.pdf / .docx)<br>
+&darr;<br>
+parse &rarr; chunk (500 words, 50 overlap)<br>
+&darr;<br>
+&nbsp;&nbsp;&nbsp;&#9484;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9516;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9472;&#9488;<br>
+inverted index (tf, df, norms) &nbsp;&nbsp; Chroma (384-dim vectors)<br>
+&nbsp;&nbsp;&nbsp;&darr;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&darr;<br>
+VSM &nbsp;/&nbsp; BM25 &nbsp;/&nbsp; Rocchio &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; RAG (retrieve &rarr; LLM)
+</div>
+
+<p>
+All three engines share one signature —
+<code>(query, k, mode, prf) &rarr; {"hits", "scored"}</code> —
+and are registered in a plain dictionary in <code>engines/registry.py</code>. The
+<code>scored</code> value is the size of the candidate set that was actually scored,
+and it is the number that makes the savings of the inexact methods measurable.
+</p>
+
+<h3>The retrieval unit: the document, not the chunk</h3>
+<p>
+One foundational decision is respected throughout the code: <b>the scoring unit is the
+document, not the chunk</b>. Chunking is a technical necessity imposed by the embedding
+model's context window, not something the user is looking for. This decision has three
+direct mathematical consequences:
+</p>
+<ul>
+  <li><code>df</code> means "document frequency"; if it is counted over chunks it is no
+      longer idf, and a term's rarity becomes a function of how the text happened to be
+      split.</li>
+  <li>The <code>b</code> parameter in BM25 exists to hold long documents in check, but
+      chunking structurally makes every chunk roughly the same length, so normalizing by
+      chunk length corrects a variance that chunking itself already removed.</li>
+  <li>A long document must not be able to escape the length penalty by being split into
+      several short chunks and then occupy several slots in the result list.</li>
+</ul>
+
+<p>
+The index therefore builds <b>two levels</b> in a single pass: the chunk level (for RAG
+and for picking the snippet) and the document level (for VSM, BM25 and Rocchio scoring).
+</p>
+
+<!-- ============================================================ -->
+<h2 id="s2">2. Indexing pipeline</h2>
+
+<h3>2.1 File parsing</h3>
+<p>
+<code>.pdf</code> files are read with <code>PyMuPDF</code> and <code>.docx</code> files
+with <code>python-docx</code> (<code>services/ingest.py</code>). Each parser returns a
+<code>(text, title)</code> pair; if a file carries no metadata title, the name the user
+picked is used — not the temporary file path, since otherwise the document shows up in
+the list under a name like <code>tmpoqta_c1i</code>.
+</p>
+
+<h3>2.2 Chunking</h3>
+<p>
+<code>RecursiveCharacterTextSplitter</code> is used, which respects paragraph and
+sentence boundaries. The subtle implementation point is that the project specification
+defines chunk size in <b>words</b>, while this class counts <b>characters</b> by
+default; the length function is therefore replaced:
+</p>
+<pre>_splitter = RecursiveCharacterTextSplitter(
+    chunk_size=500, chunk_overlap=50,
+    length_function=lambda t: len(t.split()),   # words, not characters
+)</pre>
+<p>
+The 50-word overlap guarantees that a sentence falling exactly on a chunk boundary is
+not left half-finished in either chunk.
+</p>
+
+<h3>2.3 Dual indexing</h3>
+<p>
+Every chunk goes to both stores at once: its tokens and their frequencies to the
+inverted index, and its raw text, after embedding, to Chroma. The chunk id is identical
+in both (<code>{doc_id}:{ordinal}</code>), and that is exactly what turns synchronized
+deletion into a <b>key lookup</b> rather than a scan of the whole store.
+</p>
+
+<!-- ============================================================ -->
+<h2 id="s3">3. Text preprocessing: from word to term</h2>
+
+<p>
+Slide 5 of the preprocessing chapter defines the difference between a "word" and a
+"term": a word is a string that appears in the text, and a term is a normalized
+equivalence class. The whole <code>engines/lexical/text.py</code> module exists for that
+conversion, and the steps are in exactly the order the slides introduce them:
+</p>
+
+<table>
+<tr><th style="width:22%">Step</th><th style="width:30%">Implementation</th><th>Example and rationale</th></tr>
+<tr>
+  <td>Drop periods in acronyms <span class="slide">s11</span></td>
+  <td class="mono">_ACRONYM_RE</td>
+  <td>U.S.A. &rarr; USA — the pattern is restricted to "letter + period" sequences so that a general "delete every period" rule does not glue together sentence boundaries that PDF extraction leaves without a space.</td>
+</tr>
+<tr>
+  <td>Drop hyphens <span class="slide">s11</span></td>
+  <td class="mono">_HYPHEN_RE</td>
+  <td>anti-discriminatory &rarr; antidiscriminatory — only between two word characters.</td>
+</tr>
+<tr>
+  <td>Strip diacritics <span class="slide">s22</span></td>
+  <td class="mono">NFKD + combining</td>
+  <td>résumé &rarr; resume; the same step also normalizes Arabic diacritics and PDF ligatures (ﬁle &rarr; file).</td>
+</tr>
+<tr>
+  <td>Case folding <span class="slide">s14</span></td>
+  <td class="mono">.lower()</td>
+  <td>The slide's criterion: "how is the user likely to write the query?"</td>
+</tr>
+<tr>
+  <td>Tokenization <span class="slide">s6</span></td>
+  <td class="mono">[^\W_]+</td>
+  <td>The older <code>[a-z0-9]+</code> pattern produced zero tokens for Persian, Arabic and Cyrillic; this one is Unicode-aware.</td>
+</tr>
+<tr>
+  <td>Stemming <span class="slide">s17-18</span></td>
+  <td class="mono">snowball "porter"</td>
+  <td>organize / organizes / organizing &rarr; organ. The slide states explicitly that the exact stem does not matter, only the equivalence class does.</td>
+</tr>
+</table>
+
+<div class="note-box">
+<b>Why is there no stopword list?</b>
+Slide 10 notes that the general trend is away from removing stopwords, and more
+importantly: this system's corpus is <b>mutable</b> — the user adds and removes
+documents at any moment, so any list built from corpus frequencies goes stale
+immediately. Instead, high-frequency terms are dropped at query time by idf-based
+"index elimination" (section 7), which needs no stored list and adapts itself to the
+corpus.
+</div>
+
+<div class="note-box">
+<b>One path, not two.</b>
+Slide 11 stresses: "it is critical that the indexed text and the query terms be
+normalized the same way." For that reason <code>tokenize()</code> is the only entry
+point: writing to the index, VSM, BM25, Rocchio, and even term highlighting in the
+snippet all call this one function, so it is impossible for the two sides to end up with
+different equivalence classes.
+</div>
+
+<!-- ============================================================ -->
+<h2 id="s4">4. Inverted index and data structures</h2>
+
+<p>The <code>InvertedIndex</code> class holds these mappings:</p>
+
+<table>
+<tr><th style="width:30%" class="mono">structure</th><th style="width:34%">mapping</th><th>role</th></tr>
+<tr><td class="mono">postings</td><td class="mono">term &rarr; {chunk_id: tf}</td><td>the main inverted index, at chunk level</td></tr>
+<tr><td class="mono">forward</td><td class="mono">chunk_id &rarr; {term: tf}</td><td>deletion in O(terms)</td></tr>
+<tr><td class="mono">chunk_norm</td><td class="mono">chunk_id &rarr; float</td><td>snippet chunk selection</td></tr>
+<tr><td class="mono">doc_forward</td><td class="mono">doc_id &rarr; {term: tf}</td><td>term frequency over the whole document (sum of chunks)</td></tr>
+<tr><td class="mono">doc_postings</td><td class="mono">term &rarr; {doc_id}</td><td>computing df</td></tr>
+<tr><td class="mono">doc_len</td><td class="mono">doc_id &rarr; int</td><td>dl in BM25</td></tr>
+<tr><td class="mono">doc_norm</td><td class="mono">doc_id &rarr; float</td><td>the c component of lnc</td></tr>
+</table>
+
+<h3>4.1 Document frequency and idf</h3>
+<div class="formula">
+  df<sub>t</sub> = |{ d : t &isin; d }| &nbsp;&nbsp;&nbsp;&nbsp;
+  idf<sub>t</sub> = log<sub>10</sub>
+  <span class="frac"><span>N</span><span class="den">df<sub>t</sub></span></span>
+  <span class="note">N is the total number of documents; idf is zero both for an unseen term and for a term present in every document</span>
+</div>
+<p>
+That <code>idf</code> becomes exactly zero for a term present in every document is not
+merely a mathematical detail: it is what makes such a term contribute nothing to any
+score, and consequently the code excludes it from the candidate set outright in several
+places with an <code>idf(t) &gt; 0</code> test.
+</p>
+
+<h3>4.2 The forward index and its cost</h3>
+<p>
+Keeping <code>forward</code> doubles memory, and in exchange makes deletion <b>exact and
+cheap</b>: removing a document touches only the terms that were actually in it, instead
+of scanning the whole vocabulary. At this project's scale that is the right trade.
+</p>
+
+<h3>4.3 Index versioning</h3>
+<p>
+The index is persisted with <code>pickle</code>, but alongside two tags:
+</p>
+<pre>ANALYZER = "s11-periods+hyphens/s22-deaccent/s14-fold/s17-porter"
+SCHEMA   = 2</pre>
+<p>
+If the word-to-term conversion changes, <code>ANALYZER</code> changes and the index is
+forced to rebuild. A check based on "number of chunks" does not work here: changing the
+analyzer leaves the count untouched and only moves the <b>terms</b>, so the index would
+quietly answer a query tokenized one way with postings built another way.
+</p>
+
+<!-- ============================================================ -->
+<h2 id="s5">5. Vector space model with lnc.ltc weighting</h2>
+
+<p>
+Slide 41 of the scoring chapter introduces SMART notation in the form
+<code>ddd.qqq</code> and calls <code>lnc.ltc</code> "a very standard weighting scheme".
+This system implements exactly that:
+</p>
+
+<table>
+<tr><th style="width:14%">Side</th><th style="width:14%">Code</th><th>Meaning</th></tr>
+<tr><td>Document</td><td class="mono">lnc</td><td><b>l</b>ogarithmic tf, <b>n</b>o idf, <b>c</b>osine normalization</td></tr>
+<tr><td>Query</td><td class="mono">ltc</td><td><b>l</b>ogarithmic tf, with <b>t</b>f-idf, <b>c</b>osine normalization</td></tr>
+</table>
+
+<h3>5.1 Logarithmic frequency weight</h3>
+<div class="formula">
+  w<sub>tf</sub>(tf) =
+  <span style="display:inline-block; vertical-align:middle">
+    { &nbsp; 1 + log<sub>10</sub>(tf) &nbsp;&nbsp; tf &gt; 0 &nbsp;;&nbsp;&nbsp; 0 &nbsp;&nbsp; tf = 0 }
+  </span>
+  <span class="note">slide s17 — repeating a term ten times does not make a document ten times more relevant</span>
+</div>
+
+<h3>5.2 Query vector (ltc)</h3>
+<div class="formula">
+  w<sub>t,q</sub> = (1 + log<sub>10</sub> tf<sub>t,q</sub>) &middot; idf<sub>t</sub>
+  &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+  q&#770;<sub>t</sub> =
+  <span class="frac">
+    <span>w<sub>t,q</sub></span>
+    <span class="den">&radic;( &Sigma;<sub>t&prime;&isin;q</sub> w<sub>t&prime;,q</sub><sup>2</sup> )</span>
+  </span>
+</div>
+
+<h3>5.3 Document vector (lnc)</h3>
+<div class="formula">
+  w<sub>t,d</sub> = 1 + log<sub>10</sub> tf<sub>t,d</sub>
+  &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+  ||d|| = &radic;( &Sigma;<sub>t&isin;d</sub> w<sub>t,d</sub><sup>2</sup> )
+  <span class="note">tf<sub>t,d</sub> is the term frequency summed over all chunks of that document, and ||d|| is computed over the whole document</span>
+</div>
+
+<div class="note-box">
+<b>Why does the document side carry no idf?</b>
+That is the <code>n</code> in <code>lnc</code>, and it is deliberate. idf describes a
+term's rarity across the <b>whole corpus</b> — a property of the term, not of any one
+document. Applying it on both sides effectively squares idf and doubles its influence.
+</div>
+
+<h3>5.4 Final score</h3>
+<div class="formula">
+  score(q, d) = &Sigma;<sub>t &isin; q &cap; d</sub> &nbsp;
+  q&#770;<sub>t</sub> &nbsp;&middot;&nbsp;
+  <span class="frac">
+    <span>1 + log<sub>10</sub> tf<sub>t,d</sub></span>
+    <span class="den">||d||</span>
+  </span>
+  <span class="note">because both vectors are unit length, this dot product is exactly the cosine similarity</span>
+</div>
+
+<p>
+An efficiency note: the sum runs only over query terms, and only the postings of those
+terms are traversed. The cost is therefore proportional to <b>the length of the query's
+postings</b>, not to the size of the corpus <span class="slide">8-Scoring s5</span>.
+</p>
+
+<h3>5.5 Snippet selection</h3>
+<p>
+The ranking unit is the document, but the interface needs a passage of text. For each
+winning document, <code>best_chunk</code> returns the chunk with the highest
+<code>ltc</code> score against the query — that is, the very paragraph that earned the
+document its rank, not merely its first paragraph.
+</p>
+<div class="formula">
+  best(d, q) = arg max<sub>c &isin; chunks(d)</sub> &nbsp;
+  &Sigma;<sub>t &isin; q &cap; c</sub> (1 + log<sub>10</sub> tf<sub>t,c</sub>) &middot; idf<sub>t</sub>
+</div>
+
+<!-- ============================================================ -->
+<h2 id="s6">6. Top-K document selection with a min-heap</h2>
+
+<p>
+Slides 13 and 14 of the "scoring in a search system" chapter show that finding the top K
+documents does not require sorting all N scores. The <code>TopKMinHeap</code> class is a
+fixed-capacity binary min-heap:
+</p>
+
+<pre>if len(heap) &lt; k:            heap.append(...); sift_up(...)      # O(log k)
+elif score &gt; heap[0][0]:     heap[0] = (...);  sift_down(0)      # O(log k)
+else:                        reject                              # O(1)</pre>
+
+<div class="formula">
+  O(N log K) &nbsp;&nbsp; versus &nbsp;&nbsp; O(N log N)
+  <span class="note">the heap root is always the weakest of the K kept so far, so rejecting a candidate takes constant time</span>
+</div>
+
+<div class="note-box">
+<b>Implementation note:</b> in ordinary code, <code>heapq.nlargest</code> from the Python
+standard library does the same thing in one line. The heap is written by hand here
+because "select the top K without sorting all N" is precisely what the course wants
+demonstrated, and the slide names a min-heap explicitly.
+</div>
+
+<!-- ============================================================ -->
+<h2 id="s7">7. Inexact top-K retrieval</h2>
+
+<p>
+Slide 18 states the general idea: pick a candidate set A such that |A| &lt;&lt; N, which
+need not contain all of the top K but does contain many of them. Slide 19 lists the
+options; two of them are implemented here, and both are shared between VSM and BM25.
+</p>
+
+<h3>7.1 Champion lists <span class="slide">s26</span></h3>
+<p>
+For each term, the <code>r</code> documents with the highest <code>tf</code> for that
+term are precomputed, and at query time only those are scored (<code>r = 50</code>).
+</p>
+<div class="formula">
+  A = &bigcup;<sub>t &isin; q</sub> champions(t) &nbsp;,&nbsp;
+  champions(t) = top-r<sub>d &isin; postings(t)</sub> tf<sub>t,d</sub>
+</div>
+<div class="note-box">
+<b>An honest caveat, also recorded in the code:</b> champion lists are a looser
+approximation for BM25 than for VSM. Slide 26 defines the idea for tf-idf, whose score is
+monotonically increasing in tf; BM25 additionally divides by document length, so a long
+document with high tf can rank below a short document with lower tf that never made the
+list at all. Both cases are unsafe by definition <span class="slide">s16</span>; this one
+is just slightly looser.
+</div>
+
+<h3>7.2 Index elimination <span class="slide">s21, s24</span></h3>
+<p>
+Only high-idf query terms are kept. Rather than a global constant, the threshold is a
+fraction of the highest idf <b>within that same query</b>:
+</p>
+<div class="formula">
+  keep t &nbsp;&hArr;&nbsp; idf<sub>t</sub> &ge; &rho; &middot; max<sub>t&prime;&isin;q</sub> idf<sub>t&prime;</sub>
+  &nbsp;&nbsp;&nbsp;&nbsp; ( &rho; = 0.3 )
+  <span class="note">the slide's example: the query "catcher in the rye" is scored on catcher and rye only</span>
+</div>
+<p>
+The advantage of a relative threshold is that a query whose terms are all uniformly
+frequent does not eliminate itself down to nothing — the highest idf always clears its
+own threshold. The <code>&rho;</code> parameter is clamped to <code>[0, 1]</code> at the
+settings level so that this property cannot be violated.
+</p>
+
+<!-- ============================================================ -->
+<h2 id="s8">8. Probabilistic model: Okapi BM25</h2>
+
+<p>
+Slides 29 to 32 of the probabilistic retrieval chapter introduce BM25 as the answer to
+the question: "how do we add term frequency and length normalization to the probabilistic
+model?" The full implemented formula:
+</p>
+
+<div class="formula" style="font-size:10.2pt; line-height:2.6">
+  <span style="white-space:nowrap">score<sub>BM25</sub>(q, d) &nbsp;=&nbsp; &Sigma;<sub>t &isin; q</sub> &nbsp; idf<sub>t</sub></span>
+  &nbsp;&middot;&nbsp;
+  <span class="frac">
+    <span>(k<sub>1</sub> + 1) &middot; tf<sub>t,d</sub></span>
+    <span class="den">k<sub>1</sub> &middot; ( 1 &minus; b + b &middot; dl<sub>d</sub> / avgdl ) + tf<sub>t,d</sub></span>
+  </span>
+  &nbsp;&middot;&nbsp;
+  <span class="frac">
+    <span>(k<sub>3</sub> + 1) &middot; qf<sub>t</sub></span>
+    <span class="den">k<sub>3</sub> + qf<sub>t</sub></span>
+  </span>
+  <span class="note">k<sub>1</sub> = 1.5, b = 0.75, k<sub>3</sub> = 1.2 — the ranges suggested on slide s32</span>
+</div>
+
+<div class="formula" style="font-size:10pt">
+  dl<sub>d</sub> = &Sigma;<sub>c &isin; chunks(d)</sub> |c| &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+  avgdl =
+  <span class="frac">
+    <span>1</span><span class="den">N</span>
+  </span>
+  &Sigma;<sub>d&prime;</sub> dl<sub>d&prime;</sub>
+  &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+  qf<sub>t</sub> = tf<sub>t,q</sub>
+  <span class="note">dl is document length in tokens, and qf is the term frequency within the query itself</span>
+</div>
+
+<p>The three parts of the formula each do one specific job:</p>
+
+<table>
+<tr><th style="width:16%">Component</th><th>Role</th></tr>
+<tr>
+  <td class="mono">idf<sub>t</sub></td>
+  <td>Rare terms are worth more, exactly as in VSM. Slides 30 and 31 write it as
+      log(N/df) — the same corpus-wide approximation VSM uses — so this engine calls the
+      same <code>index.idf</code> instead of introducing a second definition. The
+      Robertson–Spärck Jones form, log((N&minus;df+0.5)/(df+0.5)), is the other common
+      choice; but it goes negative for a term present in more than half the corpus,
+      whereas the simple form never does.</td>
+</tr>
+<tr>
+  <td class="mono">k<sub>1</sub>, b</td>
+  <td>Term-frequency saturation and length normalization — the two things the binary
+      independence model lacked <span class="slide">s29</span>. Both dl and avgdl are
+      measured over the <b>document</b>, for the reason given in section 1.</td>
+</tr>
+<tr>
+  <td class="mono">k<sub>3</sub></td>
+  <td>The same saturation, this time on the query side. It only matters for long queries
+      in which a term is repeated <span class="slide">s32</span>; for an ordinary short
+      query qf = 1, and the factor is then constant across all documents, so it cannot
+      change the ranking.</td>
+</tr>
+</table>
+
+<h3>8.1 Saturation behaviour — the main difference from VSM</h3>
+<p>
+As tf grows, the middle fraction approaches a ceiling of (k<sub>1</sub>+1) and goes no
+higher. In VSM, the weight 1 + log tf has no ceiling and grows without bound, however
+slowly. This difference is exactly what the comparison heatmap shows: a term that
+swallows an entire column by itself under VSM is flattened under BM25, leaving room for
+the other terms to contribute.
+</p>
+
+<!-- ============================================================ -->
+<h2 id="s9">9. Pseudo-relevance feedback with Rocchio</h2>
+
+<p>
+True relevance feedback requires the user's judgement. <b>Pseudo</b>-relevance feedback
+assumes the top K documents of an initial retrieval are relevant and the next few are
+non-relevant <span class="slide">10-RF s21</span>, then runs Rocchio on that assumption
+and retrieves again.
+</p>
+
+<div class="formula" style="font-size:11.5pt">
+  q&#8407;<sub>m</sub> = &alpha; &middot; q&#8407;<sub>0</sub>
+  &nbsp;+&nbsp; &beta; &middot;
+  <span class="frac"><span>1</span><span class="den">|D<sub>r</sub>|</span></span>
+  &Sigma;<sub>d&#8407;<sub>j</sub> &isin; D<sub>r</sub></sub> d&#8407;<sub>j</sub>
+  &nbsp;&minus;&nbsp; &gamma; &middot;
+  <span class="frac"><span>1</span><span class="den">|D<sub>nr</sub>|</span></span>
+  &Sigma;<sub>d&#8407;<sub>j</sub> &isin; D<sub>nr</sub></sub> d&#8407;<sub>j</sub>
+  <span class="note">&alpha; = 1.0, &beta; = 0.75, &gamma; = 0.15, |D<sub>r</sub>| = 10, |D<sub>nr</sub>| = 20</span>
+</div>
+
+<p>Three details from the slides that are easy to miss, and are honoured here:</p>
+<ol>
+  <li><b>Clipping negative weights.</b> A negative weight is meaningless in the vector
+      space model, so any component driven negative by the &gamma; term is set to zero
+      <span class="slide">s12</span>.</li>
+  <li><b>Truncating the expanded query.</b> Rocchio produces a very long query, and long
+      queries are expensive; the slides limit expansion to roughly the top 20 terms
+      <span class="slide">s20</span>. In the code, the original query terms are never
+      dropped — protecting them is exactly what &alpha; is for.</li>
+  <li><b>The same vector space.</b> The centroids are built from <code>ltc</code>
+      vectors, not from the <code>lnc</code> weights the index stores. Rocchio
+      <i>adds</i> documents to the query, so both must live in the same space, and the
+      query side carries idf. The feedback set is only a few dozen documents, so
+      recomputing is cheap.</li>
+</ol>
+
+<p>Execution flow:</p>
+<div class="pipeline">
+rank(q₀, k=30) &rarr; D_r = hits[0:10], D_nr = hits[10:30]<br>
+&darr;<br>
+q_m = rocchio(q₀, D_r, D_nr) &rarr; clip negatives &rarr; top-20 terms &rarr; L2 normalize<br>
+&darr;<br>
+rank(q_m, k) &nbsp;&nbsp;&nbsp; scored = pass₁ + pass₂
+</div>
+
+<p>
+In this mode <code>scored</code> is the sum of the two passes and can exceed the corpus
+size, because a document scored in both passes is counted twice. That is why the
+<code>passes</code> array is returned separately, so the interface can write "6 + 7 of 9"
+instead of the nonsensical "13 of 9".
+</p>
+
+<!-- ============================================================ -->
+<h2 id="s10">10. Semantic engine and the RAG pipeline</h2>
+
+<p>
+The only <b>new</b> step compared to the lexical engines is the last one; everything
+before it is the same retrieval problem in a different representation.
+</p>
+
+<div class="pipeline">
+question<br>
+&darr; (if follow-up) query rewriting via LLM<br>
+&darr;<br>
+embed &rarr; 384-dim unit vector<br>
+&darr;<br>
+Chroma cosine search &rarr; top-k chunks (k = 4)<br>
+&darr;<br>
+relevance floor: score ≥ 0.22 ?  &mdash;no&rarr;  refuse + list corpus topics<br>
+&darr; yes<br>
+numbered context &rarr; prompt &rarr; LLM &rarr; answer with [Doc N]<br>
+&darr;<br>
+parse citations &rarr; map back to chunks
+</div>
+
+<h3>10.1 Embedding</h3>
+<p>
+The <code>paraphrase-multilingual-MiniLM-L12-v2</code> model runs locally on CPU, with no
+API key. Vectors are made unit length with <code>normalize_embeddings=True</code>, so the
+dot product is directly the cosine.
+</p>
+
+<div class="note-box">
+<b>A deliberate deviation from the specification.</b>
+The specification suggests <code>all-MiniLM-L6-v2</code>, but that model is
+English-only. Tested on this very corpus, a Persian query scored 0.07 against the
+paragraph that answered it exactly, while the same question in English scored 0.46 — that
+is noise, not retrieval. The multilingual model from the same family aligns over 50
+languages in a shared space, so a Persian question can retrieve an English paragraph. The
+cost: about 470 MB, for the same 384 dimensions.
+</div>
+
+<h3>10.2 Vector search</h3>
+<div class="formula">
+  sim(q, c) = cos(v&#8407;<sub>q</sub>, v&#8407;<sub>c</sub>) =
+  <span class="frac">
+    <span>v&#8407;<sub>q</sub> &middot; v&#8407;<sub>c</sub></span>
+    <span class="den">||v&#8407;<sub>q</sub>|| &middot; ||v&#8407;<sub>c</sub>||</span>
+  </span>
+  &nbsp;=&nbsp; 1 &minus; distance<sub>chroma</sub>
+  <span class="note">the collection is created with hnsw:space = cosine; Chroma's default is squared Euclidean distance, which gives a different ranking for non-unit vectors</span>
+</div>
+
+<h3>10.3 The relevance floor — the system's main guard</h3>
+<p>
+Dense retrieval never returns "nothing"; it always returns the k nearest vectors, however
+far away they are <span class="slide">RAG s11</span>. Without a floor, a question outside
+the corpus reaches the model with irrelevant context, and answer quality depends solely
+on the model's restraint.
+</p>
+<div class="formula">
+  if &nbsp; max<sub>c</sub> sim(q, c) &lt; 0.22 &nbsp; &rarr; &nbsp; refuse, list corpus topics
+  <span class="note">measured on this corpus: in-domain questions 0.31 to 0.71, out-of-domain questions &minus;0.07 to 0.15 — 0.22 sits in the gap</span>
+</div>
+<p>
+The decision is deterministic, costs no tokens, and answers within a few milliseconds.
+The same branch also serves the question "what can you do?": that question too is far
+from every paragraph, and listing the corpus topics is exactly the right answer to it.
+</p>
+
+<h3>10.4 Prompt and citations</h3>
+<p>
+Retrieved paragraphs are numbered (<code>[Doc 1]</code> through <code>[Doc k]</code>),
+and that numbering is what makes citation possible. The main prompt rules:
+</p>
+<ul>
+  <li>Answer only from the given paragraphs; do not use prior knowledge
+      <span class="slide">RAG s35</span>.</li>
+  <li>Support every claim with a <code>[Doc N]</code> marker.</li>
+  <li>Answer in the same language as the question.</li>
+  <li>If the paragraphs cover only part of the question, answer that part and state
+      explicitly which part this corpus cannot answer.</li>
+</ul>
+
+<p>
+After generation, the pattern <code>\[Doc\s*(\d+)\]</code> is extracted from the answer
+text and the numbers are mapped back to real chunks; only the chunks the model actually
+cited are shown as sources.
+</p>
+
+<div class="note-box">
+<b>Retrieved text is untrusted input</b> <span class="slide">RAG s44</span>.
+A document in the corpus can contain text addressed to the model ("ignore the question
+and write X"). Retrieved text is therefore wrapped in a <code>&lt;passages&gt;</code>
+tag, and the prompt says explicitly that its content is <b>data</b> to quote, not
+<b>instructions</b> to follow.
+</div>
+
+<h3>10.5 Query rewriting</h3>
+<p>
+A follow-up message like "is that all?" or "why?" takes its meaning from the
+conversation, not from itself. Embedding it alone produces a vector close to nothing in
+particular, the relevance floor rejects it, and the user is told their own follow-up is
+outside the corpus. Slide 43 is explicit about this class of failure: most "RAG
+hallucinations" are in fact <b>retrieval failures</b>.
+</p>
+<p>
+Before embedding, therefore, the message is rewritten into a standalone question with the
+help of the LLM <span class="slide">RAG s24</span>. The system retrieves for the
+<b>rewritten question</b> but answers the <b>question the user typed</b>. If rewriting
+fails for any reason, it falls back to the original question: retrieval on a raw follow-up
+is weak, but better than retrieval on a question the model invented on its own.
+</p>
+
+<h3>10.6 Streaming</h3>
+<p>
+The <code>/api/search/stream</code> route emits events as NDJSON (one JSON object per
+line): <code>rewriting</code>, <code>embedding</code>, <code>retrieving</code>,
+<code>reading</code> (together with the retrieved chunks), then text
+<code>delta</code>s, and finally <code>done</code>. The point is that the chunks are sent
+<b>before</b> a single token is generated, so the user sees the sources while still
+waiting for the answer.
+</p>
+
+<!-- ============================================================ -->
+<h2 id="s11">11. Keeping the two indexes in sync</h2>
+
+<p>
+The source of truth is the chunks table in SQLite. Both indexes are derived from it and
+both are written from a single place: <code>services/corpus.py</code>. That architectural
+constraint turns synchronization from a problem into a property.
+</p>
+
+<table>
+<tr><th style="width:22%">Operation</th><th>Inverted index</th><th>Chroma</th></tr>
+<tr><td>Add document</td><td class="mono">index.add(chunks, doc_id)</td><td class="mono">vectordb.add(chunks, doc_id)</td></tr>
+<tr><td>Delete document</td><td class="mono">index.remove(chunk_ids)</td><td class="mono">vectordb.remove(chunk_ids)</td></tr>
+<tr><td>Staleness detection</td><td class="mono">analyzer / schema tag</td><td class="mono">embed_model metadata</td></tr>
+<tr><td>Rebuild</td><td class="mono">rebuild_from_db()</td><td class="mono">rebuild_from_db()</td></tr>
+</table>
+
+<p>
+The chunk id is identical in both stores, so deleting a document is a <b>key lookup</b>
+on both sides. The delete route's response returns the number of postings and vectors
+removed — precisely the evidence the "index synchronization" row of the grading table
+asks for.
+</p>
+
+<p>
+Deleting part of a document changes that document's norm, and a norm cannot be
+"subtracted" term by term; <code>_recompute_doc</code> therefore <b>recomputes</b> the
+document-level sums from the remaining chunks. This is the only place document-level
+state is written, so it is impossible for a document's tf, length and norm to fall out of
+step with its chunks.
+</p>
+
+<!-- ============================================================ -->
+<h2 id="s12">12. Complete parameter table</h2>
+
+<table>
+<tr><th style="width:26%" class="mono">parameter</th><th style="width:13%">value</th><th>reference and rationale</th></tr>
+
+<tr><td colspan="3" style="background:var(--box); font-weight:700">Chunking</td></tr>
+<tr><td class="mono">chunk_size</td><td class="mono">500 words</td><td>project specification §2.1 (RAG slides: 1000 characters)</td></tr>
+<tr><td class="mono">chunk_overlap</td><td class="mono">50 words</td><td>project specification §2.1</td></tr>
+
+<tr><td colspan="3" style="background:var(--box); font-weight:700">Lexical retrieval</td></tr>
+<tr><td class="mono">top_k</td><td class="mono">10</td><td>number of results displayed</td></tr>
+<tr><td class="mono">champion_r</td><td class="mono">50</td><td>8-Scoring s26 — the r documents with the highest tf for each term</td></tr>
+<tr><td class="mono">elimination_ratio</td><td class="mono">0.3</td><td>8-Scoring s24 — relative idf floor, clamped to [0, 1]</td></tr>
+
+<tr><td colspan="3" style="background:var(--box); font-weight:700">BM25</td></tr>
+<tr><td class="mono">bm25_k1</td><td class="mono">1.5</td><td>project specification §3.2.2 (assignment 2 used 1.2)</td></tr>
+<tr><td class="mono">bm25_b</td><td class="mono">0.75</td><td>11-Probabilistic s32</td></tr>
+<tr><td class="mono">bm25_k3</td><td class="mono">1.2</td><td>11-Probabilistic s32 — long-query saturation</td></tr>
+
+<tr><td colspan="3" style="background:var(--box); font-weight:700">Rocchio</td></tr>
+<tr><td class="mono">prf_alpha</td><td class="mono">1.0</td><td rowspan="6">10-Relevance Feedback s12 and s20-21</td></tr>
+<tr><td class="mono">prf_beta</td><td class="mono">0.75</td></tr>
+<tr><td class="mono">prf_gamma</td><td class="mono">0.15</td></tr>
+<tr><td class="mono">prf_n_relevant</td><td class="mono">10</td></tr>
+<tr><td class="mono">prf_n_nonrelevant</td><td class="mono">20</td></tr>
+<tr><td class="mono">prf_expansion_terms</td><td class="mono">20</td></tr>
+
+<tr><td colspan="3" style="background:var(--box); font-weight:700">Semantic and RAG</td></tr>
+<tr><td class="mono">embed_model</td><td class="mono" style="font-size:7.6pt">paraphrase-multilingual<br>-MiniLM-L12-v2</td><td>384 dimensions, multilingual — section 10.1</td></tr>
+<tr><td class="mono">rag_top_k</td><td class="mono">4</td><td>RAG s43 — short context, precise context</td></tr>
+<tr><td class="mono">rag_min_score</td><td class="mono">0.22</td><td>RAG s11 — relevance floor, measured on this corpus</td></tr>
+</table>
+
+<!-- ============================================================ -->
+<h2 id="s13">13. Mapping the implementation to the course slides</h2>
+
+<table>
+<tr><th style="width:34%">Slide deck</th><th style="width:12%">Page</th><th>Where it is implemented</th></tr>
+
+<tr><td class="mono">3-Document Preprocessing</td><td class="mono">5, 6, 11, 14, 17, 18, 22</td><td class="mono">lexical/text.py</td></tr>
+
+<tr><td class="mono">2-Boolean IR &amp; Indexing</td><td class="mono">—</td><td class="mono">lexical/index.py (postings)</td></tr>
+
+<tr><td class="mono">7-Scoring</td><td class="mono">13, 14, 29</td><td>binary &rarr; count &rarr; weighted matrix — the basis of the heatmap</td></tr>
+<tr><td class="mono">7-Scoring</td><td class="mono">17, 23, 24</td><td class="mono">index.log_tf, index.idf</td></tr>
+<tr><td class="mono">7-Scoring</td><td class="mono">33-37</td><td>cosine similarity — <code>vsm.rank</code></td></tr>
+<tr><td class="mono">7-Scoring</td><td class="mono">41, 43</td><td>SMART notation and the full lnc.ltc worked example</td></tr>
+
+<tr><td class="mono">8-Scoring in Search System</td><td class="mono">13, 14</td><td class="mono">lexical/heap.py</td></tr>
+<tr><td class="mono">8-Scoring in Search System</td><td class="mono">18, 19</td><td class="mono">index.candidates</td></tr>
+<tr><td class="mono">8-Scoring in Search System</td><td class="mono">21, 24</td><td class="mono">index.eliminate</td></tr>
+<tr><td class="mono">8-Scoring in Search System</td><td class="mono">25, 26</td><td class="mono">index.champions</td></tr>
+
+<tr><td class="mono">11-Probabilistic IR</td><td class="mono">29, 30, 31</td><td class="mono">lexical/bm25.py</td></tr>
+<tr><td class="mono">11-Probabilistic IR</td><td class="mono">32</td><td>the k<sub>3</sub> term for long queries</td></tr>
+
+<tr><td class="mono">10-Relevance Feedback</td><td class="mono">12, 20, 21</td><td class="mono">lexical/prf.py</td></tr>
+
+<tr><td class="mono">Retrieval Augmented Generation</td><td class="mono">11</td><td>relevance floor — <code>rag_min_score</code></td></tr>
+<tr><td class="mono">Retrieval Augmented Generation</td><td class="mono">24</td><td>query rewriting</td></tr>
+<tr><td class="mono">Retrieval Augmented Generation</td><td class="mono">32, 33, 34</td><td>chunking, embedding, vector store</td></tr>
+<tr><td class="mono">Retrieval Augmented Generation</td><td class="mono">35, 43, 44</td><td>prompt grounding, retrieval failure, untrusted input</td></tr>
+
+<tr><td class="mono">9- Evaluation</td><td class="mono">24-36</td><td>P@K, MAP and the precision-recall curve — evaluation section</td></tr>
+</table>
+
+</body>
+</html>
